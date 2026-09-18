@@ -29,6 +29,19 @@
 #define SETTINGS_BOOT_MESSAGE_LINE1_ADDR 0x00A0C8u
 #define SETTINGS_BOOT_MESSAGE_LINE2_ADDR 0x00A0D8u
 
+/* MR channel names: one 16-byte slot per channel at 0x004000 + channel * 16,
+ * zero padded. The historical ASCII layout only used (and only ever wrote) the
+ * first 10 bytes; the remaining 5 are unused by anything else, so a UTF-8 name
+ * may spend them on Hanzi - 15 bytes is 5 Hanzi, or 15 ASCII characters.
+ * Do not grow this past 15: the slot itself is 16 bytes including the
+ * terminator. */
+#define CHANNEL_NAME_SLOT_SIZE 16u
+#ifdef ENABLE_CHINESE
+#define CHANNEL_NAME_MAX_BYTES 15u
+#else
+#define CHANNEL_NAME_MAX_BYTES 10u
+#endif
+
 enum POWER_OnDisplayMode_t {
 #ifdef ENABLE_FEAT_F4HWN
     POWER_ON_DISPLAY_MODE_ALL,
@@ -323,6 +336,10 @@ uint32_t SETTINGS_FetchChannelFrequency(const uint16_t channel);
 bool     SETTINGS_FetchChannelScanInfo(const uint16_t channel, uint32_t *frequency, ModulationMode_t *modulation);
 bool     SETTINGS_FetchChannelScanDisplayInfo(const uint16_t channel, ChannelScanDisplayInfo_t *info);
 void     SETTINGS_FetchChannelName(char *s, const uint16_t channel);
+#ifdef ENABLE_CHINESE
+/* True when a stored channel name needs the CJK renderer (ui/helper.c). */
+bool     SETTINGS_ChannelNameHasCjk(const char *s);
+#endif
 void     SETTINGS_FactoryReset(bool bIsAll);
 #ifdef ENABLE_FMRADIO
     void SETTINGS_SaveFM(void);

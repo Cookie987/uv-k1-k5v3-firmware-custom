@@ -47,4 +47,19 @@ void UI_DrawRectangleBuffer(uint8_t (*buffer)[128], int16_t x1, int16_t y1, int1
 void UI_DisplayClear(void);
 void UI_StatusClear(void);
 
+#ifdef ENABLE_CHINESE
+/* Mixed CJK/Latin text drawn by pixel coordinates instead of by whole 8-pixel
+ * framebuffer rows: a 12-pixel Hanzi does not fit the row grid used by the
+ * ASCII font tables (gFontSmall is 7 pixels tall and gFontBig is 16). Each Hanzi
+ * is 12+1 px wide, each Latin character 6+1 px, and the two are centred
+ * independently inside the [YStart, YEnd] pixel band.
+ *
+ * Start/End is an x window: when End > Start and the text is narrower, it is
+ * centred inside; pass End == Start to start exactly at Start. */
+void   UI_PrintStringSmallAtPixel(const char *pString, uint8_t Start, uint8_t End, uint8_t YStart, uint8_t YEnd, uint8_t LatinDownWhenMixed);
+/* Same, in the canonical 12-pixel channel-name band starting at YTop, used by
+ * every screen that shows a channel name. */
+void   UI_PrintStringSmallChannelNameBand(const char *pString, uint8_t Start, uint8_t End, uint8_t YTop);
+#endif
+
 #endif

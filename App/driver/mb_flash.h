@@ -150,8 +150,17 @@ uint8_t MB_SlotWrite(uint8_t slot, uint32_t offset, const uint8_t *data, uint32_
 /*   0x0F0000  bank 4 config  (64 KiB)                 ]                      */
 /*   0x100000  multiboot state A (4 KiB marker)        ] shared               */
 /*   0x101000  multiboot state B (4 KiB marker)        ] redundant            */
-/*   0x102000  -- free ~888 KiB --                                            */
+/*   0x102000  overlay apps, 16 x 8 KiB -> 0x122000    ] shared (Labs)        */
+/*   0x14C000  voice clip index tables (ENABLE_VOICE)  ] shared               */
+/*   0x14D000  voice clip data (ENABLE_VOICE)          ] shared               */
+/*   0x1AD000  Chinese font, 205367 B -> 0x1DF237      ] shared (ENABLE_CHINESE) */
 /*   0x1E0000  RX/TX log (32 KiB)                      ] shared               */
+/*                                                                            */
+/* This list is only as good as its least-updated entry: the overlay-app slots */
+/* were once missing from it, and a new region landed silently on top of them. */
+/* Rows that are not defined in this file name their owner (apps/app_overlay.h, */
+/* app/audio.c, cn_font.h, app/rxtx_log.c), and the regions that can collide    */
+/* carry build-time checks where they are defined.                             */
 /*                                                                            */
 /* Banks are 64 KiB for headroom; the live config footprint is ~44 KiB (max   */
 /* physical config address 0x00A170). Keep the config banks past the last     */

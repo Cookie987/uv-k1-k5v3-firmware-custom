@@ -797,8 +797,16 @@ static void RXTX_LOG_SetK5ViewerChannelName(RXTX_LogK5ViewerRow_t *row, uint16_t
     if (channel == RXTX_LOG_CHANNEL_NONE)
         return;
 
-    char name[RXTX_LOG_K5VIEWER_NAME_LENGTH + 1u];
+    char name[CHANNEL_NAME_MAX_BYTES + 1u];
     SETTINGS_FetchChannelName(name, channel);
+
+#ifdef ENABLE_CHINESE
+    /* The row layout is a fixed 10-byte ASCII field shared with the host-side
+     * K5Viewer viewer, so a Chinese name cannot be carried here. */
+    if (SETTINGS_ChannelNameHasCjk(name))
+        return;
+#endif
+
     for (uint8_t i = 0; i < RXTX_LOG_K5VIEWER_NAME_LENGTH && name[i] != 0; i++)
         row->channelName[i] = name[i];
 }
@@ -1261,6 +1269,13 @@ static void RXTX_LOG_FormatTitle(const RXTX_LogEntry_t *entry, char *buffer)
 
     if (entry->channel != RXTX_LOG_CHANNEL_NONE)
         SETTINGS_FetchChannelName(buffer, entry->channel);
+
+#ifdef ENABLE_CHINESE
+    /* The title is drawn with the ASCII font, so fall back to the frequency for
+     * a name it cannot render. */
+    if (SETTINGS_ChannelNameHasCjk(buffer))
+        buffer[0] = 0;
+#endif
 
     if (buffer[0] == 0)
         RXTX_LOG_FormatFrequency(entry->frequency, buffer);

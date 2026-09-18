@@ -52,6 +52,11 @@
     #endif
 #endif
 
+#ifdef ENABLE_CHINESE
+    #include "cn_font.h"
+    #include "driver/py25q16.h"
+#endif
+
 #ifdef ENABLE_FEAT_F4HWN_OVERLAY_APPS
     #include "apps/app_overlay.h"
 #endif
@@ -836,6 +841,27 @@ static uint32_t mb_port_timestamp(uint32_t Port)
 }
 #endif
 
+#ifdef ENABLE_CHINESE
+/* Session timestamp latched by the device-info handshake (0x0514). The font
+ * upload commands require it too: they rewrite a region of the external flash
+ * that no other host command may touch. */
+static uint32_t cn_port_timestamp(uint32_t Port)
+{
+    if (0) {}
+#if defined(ENABLE_UART)
+    else if (Port == UART_PORT_UART)
+        return UART_Timestamp;
+#endif
+#if defined(ENABLE_USB)
+    else if (Port == UART_PORT_VCP)
+        return VCP_Timestamp;
+#endif
+
+    (void)Port;
+    return 0;
+}
+#endif
+
 void UART_HandleCommand(uint32_t Port)
 {
     UART_Command_t *pUART_Command;
@@ -1318,6 +1344,140 @@ void UART_HandleCommand(uint32_t Port)
             break;
         }
 #endif
+
+#ifdef ENABLE_CHINESE
+        // ---- Chinese font blob upload (host: tools/cn_font/upload_cn_font.py)
+        // The blob is ~200 KiB - far too large for the 118 KiB internal
+        // application flash - so it lives in the external SPI flash and is
+        // pushed there by a host tool. Only the font region can be reached, and
+        // only after the usual session handshake.
+        // The uploader writes the blob front to back, so an interrupted upload
+        // leaves the version byte (the last byte of the blob) missing and
+        // CN_FONT_Init() rejects it, instead of drawing half a font.
+        case 0x0740: // font info: what the radio currently holds
+        {
+            if (pUART_Command->Header.Size != 4u) break;   // timestamp
+            gSerialConfigCountDown_500ms = 12; // keep serial mode alive (6 s)
+            const uint32_t ts = (uint32_t)pUART_Command->Data[0]
+                              | ((uint32_t)pUART_Command->Data[1] << 8)
+                              | ((uint32_t)pUART_Command->Data[2] << 16)
+                              | ((uint32_t)pUART_Command->Data[3] << 24);
+            struct __attribute__((packed)) {
+                Header_t Header;
+                uint8_t  Present;
+                uint8_t  Version;
+                uint8_t  Status;
+                uint32_t Size;
+                uint16_t Characters;
+            } Reply;
+            Reply.Header.ID   = 0x0741;
+            Reply.Header.Size = 9;   // Present+Version+Status+Size+Characters
+            Reply.Present     = CN_FONT_IsPresent() ? 1u : 0u;
+            Reply.Version     = CN_FONT_VERSION;
+            Reply.Status      = (ts != cn_port_timestamp(Port)) ? CN_FONT_ERR_AUTH : CN_FONT_OK;
+            Reply.Size        = CN_FONT_TOTAL_SIZE;
+            Reply.Characters  = (uint16_t)CN_FONT_CHAR_COUNT;
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+
+        case 0x0742: // program a chunk of the font blob
+        {
+            if (pUART_Command->Header.Size < 10u) break;   // offset(4)+len(2)+timestamp(4)
+            gSerialConfigCountDown_500ms = 12; // keep serial mode alive (6 s)
+            const uint32_t offset = (uint32_t)pUART_Command->Data[0]
+                                  | ((uint32_t)pUART_Command->Data[1] << 8)
+                                  | ((uint32_t)pUART_Command->Data[2] << 16)
+                                  | ((uint32_t)pUART_Command->Data[3] << 24);
+            const uint16_t len = (uint16_t)(pUART_Command->Data[4]
+                                  | ((uint16_t)pUART_Command->Data[5] << 8));
+            const uint32_t ts = (uint32_t)pUART_Command->Data[6]
+                              | ((uint32_t)pUART_Command->Data[7] << 8)
+                              | ((uint32_t)pUART_Command->Data[8] << 16)
+                              | ((uint32_t)pUART_Command->Data[9] << 24);
+            uint8_t status;
+
+            if (ts != cn_port_timestamp(Port))
+                status = CN_FONT_ERR_AUTH;
+            else if (len == 0u || len > CN_FONT_CHUNK_SIZE ||
+                     len != (uint16_t)(pUART_Command->Header.Size - 10u))
+                status = CN_FONT_ERR_SIZE;
+            else if (offset > CN_FONT_TOTAL_SIZE ||
+                     (uint32_t)len > (CN_FONT_TOTAL_SIZE - offset))
+                status = CN_FONT_ERR_RANGE;
+            else
+            {
+                /* The driver's write path erases the sector it needs by itself,
+                 * so the host does not have to wipe the region first. */
+                PY25Q16_WriteBuffer(CN_FONT_FLASH_BASE + offset,
+                                    &pUART_Command->Data[10], len, false);
+                status = CN_FONT_OK;
+            }
+
+            struct __attribute__((packed)) {
+                Header_t Header;
+                uint32_t Offset;   // echoes the written offset
+                uint16_t Size;     // bytes written (0 on error)
+                uint8_t  Status;
+            } Reply;
+            Reply.Header.ID   = 0x0743;
+            Reply.Header.Size = 7;
+            Reply.Offset      = offset;
+            Reply.Size        = (status == CN_FONT_OK) ? len : 0;
+            Reply.Status      = status;
+            SendReply(Port, &Reply, sizeof(Reply));
+            break;
+        }
+
+        case 0x0744: // read a chunk back, so the host can verify the upload
+        {
+            if (pUART_Command->Header.Size != 10u) break;  // offset(4)+len(2)+timestamp(4)
+            gSerialConfigCountDown_500ms = 12; // keep serial mode alive (6 s)
+            const uint32_t offset = (uint32_t)pUART_Command->Data[0]
+                                  | ((uint32_t)pUART_Command->Data[1] << 8)
+                                  | ((uint32_t)pUART_Command->Data[2] << 16)
+                                  | ((uint32_t)pUART_Command->Data[3] << 24);
+            const uint16_t len = (uint16_t)(pUART_Command->Data[4]
+                                  | ((uint16_t)pUART_Command->Data[5] << 8));
+            const uint32_t ts = (uint32_t)pUART_Command->Data[6]
+                              | ((uint32_t)pUART_Command->Data[7] << 8)
+                              | ((uint32_t)pUART_Command->Data[8] << 16)
+                              | ((uint32_t)pUART_Command->Data[9] << 24);
+            struct __attribute__((packed)) {
+                Header_t Header;
+                uint32_t Offset;
+                uint16_t Size;
+                uint8_t  Status;
+                uint8_t  Data[CN_FONT_CHUNK_SIZE];
+            } Reply;
+            uint8_t status;
+
+            memset(&Reply, 0, sizeof(Reply));
+
+            if (ts != cn_port_timestamp(Port))
+                status = CN_FONT_ERR_AUTH;
+            else if (len == 0u || len > sizeof(Reply.Data))
+                status = CN_FONT_ERR_SIZE;
+            else if (offset > CN_FONT_TOTAL_SIZE ||
+                     (uint32_t)len > (CN_FONT_TOTAL_SIZE - offset))
+                status = CN_FONT_ERR_RANGE;
+            else
+            {
+                /* A read issued while the flash is still busy from the previous
+                 * program returns stale data, hence the "safe" variant. */
+                PY25Q16_ReadBufferSafe(CN_FONT_FLASH_BASE + offset, Reply.Data, len);
+                status = CN_FONT_OK;
+            }
+
+            Reply.Header.ID   = 0x0745;
+            Reply.Offset      = offset;
+            Reply.Size        = (status == CN_FONT_OK) ? len : 0;
+            Reply.Status      = status;
+            Reply.Header.Size = (uint16_t)(7u + Reply.Size);
+            SendReply(Port, &Reply, (uint16_t)(11u + Reply.Size));
+            break;
+        }
+#endif // ENABLE_CHINESE
 
 #ifdef ENABLE_UART_RW_BK_REGS
         case 0x0601:

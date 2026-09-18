@@ -1600,7 +1600,7 @@ static void DrawStatus()
 static void ShowChannelName(uint32_t f)
 {
     static uint32_t channelF = 0;
-    static char channelName[12]; 
+    static char channelName[CHANNEL_NAME_MAX_BYTES + 1]; 
     f = NormalizeScanFrequency(f);
 
     // Channel name starts at x=43 (fixed), leaving room for the dBm
@@ -1627,7 +1627,19 @@ static void ShowChannelName(uint32_t f)
             }
         }
         if (channelName[0] != 0) {
-            UI_PrintStringSmallBufferNormal(channelName, gStatusLine + 43);
+#ifdef ENABLE_CHINESE
+            /* The status line is a single 8-pixel page drawn with the ASCII
+             * font, so a Hanzi cannot be rendered there: show nothing. */
+            if (SETTINGS_ChannelNameHasCjk(channelName))
+                channelName[0] = 0;
+            else
+#endif
+            {
+                /* From x = 43 to the battery indicator there is room for ten
+                 * characters; a 15-byte name would otherwise run off the row. */
+                channelName[10] = 0;
+                UI_PrintStringSmallBufferNormal(channelName, gStatusLine + 43);
+            }
         }
     }
 

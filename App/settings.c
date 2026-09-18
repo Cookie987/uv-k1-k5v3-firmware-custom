@@ -21,6 +21,9 @@
 #ifdef ENABLE_FMRADIO
     #include "app/fm.h"
 #endif
+#ifdef ENABLE_CHINESE
+    #include "cn_font.h"
+#endif
 #include "driver/bk1080.h"
 #include "driver/bk4819.h"
 #include "driver/py25q16.h"
@@ -709,6 +712,8 @@ bool SETTINGS_FetchChannelScanDisplayInfo(const uint16_t channel, ChannelScanDis
 
 void SETTINGS_FetchChannelName(char *s, const uint16_t channel)
 {
+    int i;
+
     if (s == NULL)
         return;
 
@@ -721,18 +726,47 @@ void SETTINGS_FetchChannelName(char *s, const uint16_t channel)
         return;
 
     // 0x0F50
-    PY25Q16_ReadBuffer(0x004000 + (channel * 16), s, 10);
+    PY25Q16_ReadBuffer(0x004000 + (channel * CHANNEL_NAME_SLOT_SIZE), s, CHANNEL_NAME_MAX_BYTES);
 
-    int i;
-    for (i = 0; i < 10; i++)
-        if (s[i] < 32 || s[i] > 127)
+    for (i = 0; i < (int)CHANNEL_NAME_MAX_BYTES; )
+    {
+        const uint8_t c = (uint8_t)s[i];
+
+        if (c == 0x00 || c == 0xFF)
+            break;                // end of name / erased slot
+
+#ifdef ENABLE_CHINESE
+        if (c >= 0xE4u && c <= 0xEFu)
+        {   // 3-byte UTF-8 CJK sequence: keep it whole or drop it, never half
+            if (i + 2 >= (int)CHANNEL_NAME_MAX_BYTES)
+                break;            // truncated sequence
+            if (((uint8_t)s[i + 1] & 0xC0u) != 0x80u ||
+                ((uint8_t)s[i + 2] & 0xC0u) != 0x80u)
+                break;            // not a valid sequence
+            i += 3;
+            continue;
+        }
+#endif
+
+        if (c < 32u || c > 127u)
             break;                // invalid char
 
-    s[i--] = 0;                   // null term
+        i++;
+    }
 
+    s[i] = 0;                     // null term
+
+    i--;
     while (i >= 0 && s[i] == 32)  // trim trailing spaces
         s[i--] = 0;               // null term
 }
+
+#ifdef ENABLE_CHINESE
+bool SETTINGS_ChannelNameHasCjk(const char *s)
+{
+    return CN_FONT_StringHasCjk(s);
+}
+#endif
 
 void SETTINGS_FactoryReset(bool bIsAll)
 {
@@ -1231,11 +1265,25 @@ void SETTINGS_SaveBatteryCalibration(const uint16_t * batteryCalibration)
 
 void SETTINGS_SaveChannelName(uint16_t channel, const char * name)
 {
-    uint16_t offset = channel * 16;
-    uint8_t buf[16] = {0};
-    memcpy(buf, name, MIN(strlen(name), 10u));
+    uint16_t offset = channel * CHANNEL_NAME_SLOT_SIZE;
+    uint8_t buf[CHANNEL_NAME_SLOT_SIZE] = {0};
+    size_t len = strlen(name);
+
+    if (len > CHANNEL_NAME_MAX_BYTES)
+    {
+        len = CHANNEL_NAME_MAX_BYTES;
+
+#ifdef ENABLE_CHINESE
+        /* Never cut a 3-byte sequence in half: back off to its first byte so the
+         * stored name stays valid UTF-8. */
+        while (len > 0u && ((uint8_t)name[len] & 0xC0u) == 0x80u)
+            len--;
+#endif
+    }
+
+    memcpy(buf, name, len);
     // 0x0F50
-    PY25Q16_WriteBuffer(0x004000 + offset, buf, 0x10, false);
+    PY25Q16_WriteBuffer(0x004000 + offset, buf, CHANNEL_NAME_SLOT_SIZE, false);
 }
 
 void SETTINGS_UpdateChannel(uint16_t channel, const VFO_Info_t *pVFO, bool keep)

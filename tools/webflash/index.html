@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UV-K1 / UV-K5 V3 写频 &amp; 字库工具</title>
+<style>
+  :root {
+    --bg: #14171c; --panel: #1b1f26; --panel2: #222731; --line: #2e3542;
+    --fg: #e6e9ef; --dim: #9aa4b2; --accent: #4c9aff; --ok: #35c07a;
+    --warn: #e8a33d; --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .spacer { flex: 1; }
+  nav { display: flex; gap: 4px; padding: 8px 16px 0; }
+  nav button {
+    background: none; border: 1px solid transparent; border-bottom: none;
+    color: var(--dim); padding: 8px 16px; cursor: pointer; font-size: 14px;
+    border-radius: 6px 6px 0 0;
+  }
+  nav button.active { background: var(--panel); color: var(--fg); border-color: var(--line); }
+  main { padding: 0 16px 16px; }
+  section.tab { background: var(--panel); border: 1px solid var(--line); border-radius: 0 6px 6px 6px; padding: 12px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  button, select, input[type=text], input[type=number] {
+    background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 5px; padding: 5px 9px; font: inherit;
+  }
+  button { cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  button.danger { border-color: #6b2b2b; color: var(--err); }
+  input[type=text] { width: 100%; font-variant-numeric: tabular-nums; }
+  input.invalid { border-color: var(--err); }
+  .hint { color: var(--dim); font-size: 12px; }
+  .status { padding: 6px 16px; background: var(--panel); border-top: 1px solid var(--line); color: var(--dim); }
+  .status b { color: var(--fg); font-weight: 600; }
+  progress { width: 100%; height: 6px; }
+  pre#log {
+    margin: 0; padding: 8px 16px 16px; max-height: 200px; overflow: auto;
+    background: var(--bg); color: var(--dim); font-size: 12px; white-space: pre-wrap;
+  }
+  pre#log .err { color: var(--err); }
+  pre#log .ok { color: var(--ok); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  thead th {
+    position: sticky; top: 0; background: var(--panel2); z-index: 2;
+    text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); white-space: nowrap;
+  }
+  tbody td { padding: 3px 6px; border-bottom: 1px solid #232833; vertical-align: middle; }
+  tbody tr:hover { background: #1e2229; }
+  tbody tr.changed { background: #23301f; }
+  tbody tr.details td { background: #181c22; }
+  tbody tr.details .detail-grid {
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 4px 0;
+  }
+  tbody tr.details label { color: var(--dim); display: flex; gap: 6px; align-items: center; }
+  .table-wrap { max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+  td.num { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+  td.idx { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .col-name input { min-width: 150px; }
+  .col-freq input { min-width: 110px; }
+  .col-offset input { min-width: 90px; }
+  .card { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+  .card h3 { margin: 0 0 8px; font-size: 14px; }
+  dl.help dt { font-weight: 600; margin-top: 10px; }
+  dl.help dd { margin: 2px 0 0 0; color: var(--dim); }
+  code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
+  .pill { padding: 1px 7px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line); font-size: 12px; }
+  .pill.ok { color: var(--ok); border-color: #24503a; }
+  .pill.warn { color: var(--warn); border-color: #574121; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>UV-K1 / UV-K5 V3 写频 &amp; 字库工具</h1>
+  <span id="txtDevice" class="hint">未连接</span>
+  <span class="spacer"></span>
+  <label class="hint">串口速率
+    <select id="selBaud">
+      <option value="38400" selected>38400（UART）</option>
+      <option value="115200">115200</option>
+      <option value="0">不设置（USB CDC）</option>
+    </select>
+  </label>
+  <button id="btnConnect" class="primary">连接电台</button>
+</header>
+
+<nav>
+  <button data-tab="channels" class="active">信道</button>
+  <button data-tab="font">字库</button>
+  <button data-tab="help">说明</button>
+</nav>
+
+<main>
+  <!-- ---------------------------------------------------------- channels -->
+  <section id="tab-channels" class="tab">
+    <div class="toolbar">
+      <button id="btnRead" disabled>读取电台</button>
+      <button id="btnWrite" class="primary" disabled>写回改动 <span id="txtChanged">(0)</span></button>
+      <button id="btnAdd" disabled>新增信道</button>
+      <span class="spacer"></span>
+      <input type="text" id="inpSearch" placeholder="搜索名称/频率" style="width:180px">
+      <label class="hint"><input type="checkbox" id="chkAll"> 显示全部 1024 条</label>
+      <button id="btnExport" disabled>导出 JSON</button>
+      <label class="hint" style="cursor:pointer">导入 JSON<input type="file" id="inpImport" accept=".json" hidden></label>
+      <button id="btnReset" class="danger" disabled>重启电台</button>
+    </div>
+
+    <div class="hint" style="margin-bottom:8px">
+      频率填 <code>145.50000</code>（MHz，带小数点）或 <code>145500</code>（kHz，不带小数点）；
+      名称最多 15 字节，即 5 个汉字或 15 个 ASCII 字符，超出会整个字符截断。
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:52px">信道</th>
+            <th style="width:170px">名称</th>
+            <th style="width:120px">接收频率</th>
+            <th style="width:96px">偏移方向</th>
+            <th style="width:92px">偏移量</th>
+            <th style="width:120px">接收亚音</th>
+            <th style="width:120px">发射亚音</th>
+            <th style="width:96px">功率</th>
+            <th style="width:80px">带宽</th>
+            <th style="width:100px">扫描列表</th>
+            <th style="width:80px">调制</th>
+            <th style="width:40px"></th>
+          </tr>
+        </thead>
+        <tbody id="channelRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------------- font -->
+  <section id="tab-font" class="tab" hidden>
+    <div class="card">
+      <h3>电台中的字库</h3>
+      <div id="fontStatus" class="hint">未连接电台</div>
+      <div style="margin-top:8px"><button id="btnFontInfo" disabled>刷新字库状态</button></div>
+    </div>
+
+    <div class="card">
+      <h3>刷入中文点阵字库</h3>
+      <div class="hint" style="margin-bottom:8px">
+        需要 205367 字节的字库文件（<code>cn_font.bin</code>，仓库参考实现里是
+        <code>Dondji/docs/font/cn_font.bin</code>）。写入前会校验版本、首字形和索引表，
+        不匹配的文件不会写进电台。上传中断不会留下半份字库：版本字节是整份文件的最后一字节，
+        只有整份写完电台才会认它。
+      </div>
+      <div class="toolbar">
+        <label>字库文件 <input type="file" id="inpFont" accept=".bin"></label>
+        <label class="hint"><input type="checkbox" id="chkVerify" checked> 写完回读校验</label>
+        <button id="btnFontWrite" class="primary" disabled>刷入字库</button>
+      </div>
+      <div id="fontFileInfo" class="hint">未选择文件</div>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------------- help -->
+  <section id="tab-help" class="tab" hidden>
+    <div class="card">
+      <h3>使用步骤</h3>
+      <dl class="help">
+        <dt>1. 打开电台，不要进 bootloader，也不要锁屏</dt>
+        <dd>所有命令都由运行中的固件处理；锁屏或 bootloader 状态下电台不会响应。</dd>
+
+        <dt>2. 连接（Chrome / Edge，Web Serial）</dt>
+        <dd>点“连接电台”，在弹窗里选电台对应的串口（UART 桥是 38400；USB CDC 只需选口）。
+            连上后底部状态栏会显示固件版本。</dd>
+
+        <dt>3. 先“读取电台”，再改，最后“写回改动”</dt>
+        <dd>只有被修改过的信道会被写入，没动过的字节不会碰。</dd>
+
+        <dt>4. 写入后点“重启电台”让新信道生效</dt>
+        <dd>电台不会自动重读信道表，重启最稳妥。</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <h3>注意事项</h3>
+      <dl class="help">
+        <dt>务必先备份</dt>
+        <dd>“读取电台”之后用“导出 JSON”存一份，出问题可以对照恢复。</dd>
+
+        <dt>名称编码</dt>
+        <dd>信道名是 UTF-8，占 15 字节（一个汉字 3 字节）。工具会按字符边界截断，绝不会写入半个汉字。
+            中文名也可以直接在电台上用拼音输入。</dd>
+
+        <dt>多启动（Multiboot）</dt>
+        <dd>写入的是“当前生效的那个配置库”。如果你用多启动切换过配置库，写之前先确认电台当前用的是哪一个。</dd>
+
+        <dt>字库与固件</dt>
+        <dd>字库相关命令（<code>0x0740/0x0742/0x0744</code>）只在带 <code>ENABLE_CHINESE</code> 的固件里存在；
+            否则“刷新字库状态”会报无响应。字库放在外部 Flash，刷固件不会丢。</dd>
+
+        <dt>不要用本工具做“整片 flash 刷写”</dt>
+        <dd>它只写信道区、信道名区和字库区，不动校准数据、不动多启动槽位。</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <h3>打不开 / 连不上</h3>
+      <dl class="help">
+        <dt>看不到串口选择框</dt>
+        <dd>需要 Chrome 或 Edge（Web Serial），并且页面处于安全上下文。直接双击本文件（<code>file://</code>）
+            通常可用；若被拦，在该目录执行 <code>python -m http.server 8000</code>，然后访问
+            <code>http://localhost:8000/</code>。</dd>
+
+        <dt>“电台未响应”</dt>
+        <dd>电台没开机 / 在 bootloader / 锁屏，或者串口被其他写频软件占用（关掉 CHIRP、UV Studio 等）。</dd>
+      </dl>
+    </div>
+  </section>
+</main>
+
+<div class="status">
+  <span id="txtStatus">就绪</span>
+  <span id="txtStats" class="hint" style="margin-left:12px"></span>
+  <progress id="progress" hidden></progress>
+</div>
+<pre id="log"></pre>
+
+<script src="js/tables.js"></script>
+<script src="js/webflash.js"></script>
+<script>
+"use strict";
+
+const T = WebFlash.tables;
+const state = {
+  transport: null,
+  radio: null,
+  memory: null,
+  views: [],          // 原始信道数据（读回来的）
+  edits: new Map(),   // 下标 -> {record, attrs, name, changed:{...}} 或 {clear:true}
+  added: new Set(),   // 新增（还没有原始数据）的信道下标
+  fontBlob: null,
+  fontOffset: 0,      // 字库已确认写入的字节数（失败后可从这里续传）
+  busy: false
+};
+
+const $ = (id) => document.getElementById(id);
+
+/* --------------------------------------------------------------- 基础 UI */
+
+function log(message, kind) {
+  const line = document.createElement("div");
+  if (kind) line.className = kind;
+  line.textContent = "[" + new Date().toLocaleTimeString() + "] " + message;
+  $("log").appendChild(line);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
+function setStatus(text) { $("txtStatus").textContent = text; }
+
+function setProgress(done, total, label) {
+  const bar = $("progress");
+  bar.hidden = false;
+  bar.max = total;
+  bar.value = done;
+  if (label) setStatus(label + " " + done + "/" + total);
+  if (done >= total) setTimeout(() => { bar.hidden = true; }, 300);
+}
+
+async function guard(fn) {
+  if (state.busy) return;
+  state.busy = true;
+  updateButtons();
+  try {
+    await fn();
+  } catch (error) {
+    log(error.message || String(error), "err");
+    setStatus("失败：" + (error.message || error));
+  } finally {
+    state.busy = false;
+    updateButtons();
+  }
+}
+
+function connected() { return state.radio !== null; }
+
+function updateButtons() {
+  const on = connected() && !state.busy;
+  $("btnRead").disabled = !on;
+  $("btnAdd").disabled = !on || !state.memory;
+  $("btnExport").disabled = !state.memory;
+  $("btnReset").disabled = !on;
+  $("btnFontInfo").disabled = !on;
+  $("btnFontWrite").disabled = !on || !state.fontBlob;
+  $("btnWrite").disabled = !on || state.edits.size === 0;
+  $("txtChanged").textContent = "(" + countChanged() + ")";
+  $("btnConnect").textContent = connected() ? "断开" : "连接电台";
+}
+
+function countChanged() {
+  let n = 0;
+  for (const edit of state.edits.values()) {
+    if (edit.clear || edit.changed.record || edit.changed.attrs || edit.changed.name) n++;
+  }
+  return n;
+}
+
+/* ------------------------------------------------------------- 连接与读取 */
+
+async function connect() {
+  if (connected()) {
+    await state.radio.close();
+    state.radio = null;
+    state.transport = null;
+    state.memory = null;
+    state.views = [];
+    state.edits.clear();
+    state.added.clear();
+    render();
+    $("txtDevice").textContent = "未连接";
+    setStatus("已断开");
+    return;
+  }
+
+  if (!navigator.serial) {
+    throw new Error("此浏览器不支持 Web Serial，请用 Chrome 或 Edge");
+  }
+
+  const port = await navigator.serial.requestPort();
+  const baud = Number($("selBaud").value);
+
+  state.transport = await WebFlash.serialTransport(port, baud > 0 ? baud : undefined);
+  state.radio = new WebFlash.Radio(state.transport, { timeout: 2500 });
+
+  const version = await state.radio.handshake();
+  $("txtDevice").textContent = "已连接：" + (version || "未知固件版本");
+  log("已连接，" + (version || "无版本字符串"), "ok");
+  setStatus("已连接");
+
+  await refreshFontStatus();
+}
+
+async function readAll() {
+  log("开始读取信道…");
+  state.memory = await WebFlash.readChannelMemory(state.radio, {
+    onProgress: (done, total, label) => setProgress(done, total, "读取 " + label)
+  });
+
+  state.views = [];
+  for (let i = 0; i < T.mrChannelsMax; i++) {
+    state.views.push(WebFlash.channelToView(state.memory, i));
+  }
+
+  state.edits.clear();
+  state.added.clear();
+
+  const used = state.views.filter((v) => v.used).length;
+  log("读取完成：1024 条中 " + used + " 条已编程", "ok");
+  setStatus("读取完成");
+  $("txtStats").textContent = "已编程 " + used + " 条";
+  render();
+}
+
+/* ---------------------------------------------------------------- 渲染 */
+
+function option(value, label, selected) {
+  const el = document.createElement("option");
+  el.value = String(value);
+  el.textContent = label;
+  if (selected) el.selected = true;
+  return el;
+}
+
+function codeSelect(field, codeType, code) {
+  const select = document.createElement("select");
+  select.dataset.field = field;
+
+  /* 一行一个下拉、一共可能要画 1024 行，所以 258 个亚音选项只在用户真的点开时才建。 */
+  select.appendChild(option(codeType + "-" + code, WebFlash.formatCode(codeType, code), true));
+
+  const populate = () => {
+    if (select.dataset.populated) return;
+    select.dataset.populated = "1";
+
+    const current = select.value;
+    select.textContent = "";
+    select.appendChild(option("0-0", "OFF", current === "0-0"));
+
+    const ctcss = document.createElement("optgroup");
+    ctcss.label = "CTCSS (模拟亚音)";
+    T.ctcssOptionsHz10.forEach((hz10, index) => {
+      ctcss.appendChild(option("1-" + index, (hz10 / 10).toFixed(1) + " Hz", current === "1-" + index));
+    });
+    select.appendChild(ctcss);
+
+    const dcs = document.createElement("optgroup");
+    dcs.label = "DCS (数字亚音，正相)";
+    T.dcsOptions.forEach((value, index) => {
+      dcs.appendChild(option("2-" + index, "D" + value.toString(8).padStart(3, "0") + "N",
+                             current === "2-" + index));
+    });
+    select.appendChild(dcs);
+
+    const dcsI = document.createElement("optgroup");
+    dcsI.label = "DCS (反相)";
+    T.dcsOptions.forEach((value, index) => {
+      dcsI.appendChild(option("3-" + index, "D" + value.toString(8).padStart(3, "0") + "I",
+                              current === "3-" + index));
+    });
+    select.appendChild(dcsI);
+  };
+
+  select.addEventListener("mousedown", populate, { once: true });
+  select.addEventListener("focus", populate, { once: true });
+  select.addEventListener("keydown", populate, { once: true });
+
+  return select;
+}
+
+function scanListLabel(value) {
+  if (value === 0) return "OFF";
+  if (value === T.scanLists + 1) return "ALL";
+  if (value >= 1 && value <= T.scanLists) return String(value).padStart(2, "0");
+  return "?" + value;
+}
+
+function buildRow(index, view) {
+  const tr = document.createElement("tr");
+  tr.dataset.index = String(index);
+  if (view.used) tr.classList.add("used");
+
+  const record = view.record;
+  const attrs = view.attrs;
+
+  const cell = (className) => {
+    const td = document.createElement("td");
+    if (className) td.className = className;
+    tr.appendChild(td);
+    return td;
+  };
+
+  const idx = cell("idx");
+  idx.textContent = String(index + 1).padStart(4, "0");
+
+  const name = cell("col-name");
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.dataset.field = "name";
+  nameInput.value = view.name;
+  nameInput.placeholder = "（空）";
+  name.appendChild(nameInput);
+
+  const freq = cell("col-freq");
+  const freqInput = document.createElement("input");
+  freqInput.type = "text";
+  freqInput.dataset.field = "rxFrequency";
+  freqInput.value = WebFlash.formatFrequency(record.rxFrequency);
+  freq.appendChild(freqInput);
+
+  const dir = cell();
+  const dirSelect = document.createElement("select");
+  dirSelect.dataset.field = "txOffsetDirection";
+  dirSelect.appendChild(option(0, "关闭", record.txOffsetDirection === 0));
+  dirSelect.appendChild(option(1, "+", record.txOffsetDirection === 1));
+  dirSelect.appendChild(option(2, "−", record.txOffsetDirection === 2));
+  dir.appendChild(dirSelect);
+
+  const offset = cell("col-offset");
+  const offsetInput = document.createElement("input");
+  offsetInput.type = "text";
+  offsetInput.dataset.field = "txOffsetFrequency";
+  offsetInput.value = WebFlash.formatFrequency(record.txOffsetFrequency);
+  offset.appendChild(offsetInput);
+
+  cell().appendChild(codeSelect("rxCode", record.rxCodeType, record.rxCode));
+  cell().appendChild(codeSelect("txCode", record.txCodeType, record.txCode));
+
+  const power = cell();
+  const powerSelect = document.createElement("select");
+  powerSelect.dataset.field = "outputPower";
+  T.powerLabels.forEach((label, value) => {
+    powerSelect.appendChild(option(value, label, record.outputPower === value));
+  });
+  power.appendChild(powerSelect);
+
+  const bw = cell();
+  const bwSelect = document.createElement("select");
+  bwSelect.dataset.field = "channelBandwidth";
+  bwSelect.appendChild(option(0, "宽带", record.channelBandwidth === 0));
+  bwSelect.appendChild(option(1, "窄带", record.channelBandwidth === 1));
+  bw.appendChild(bwSelect);
+
+  const scan = cell();
+  const scanSelect = document.createElement("select");
+  scanSelect.dataset.field = "scanList";
+  scanSelect.appendChild(option(0, "OFF", attrs.scanList === 0));
+  for (let i = 1; i <= T.scanLists; i++) {
+    scanSelect.appendChild(option(i, String(i).padStart(2, "0"), attrs.scanList === i));
+  }
+  scanSelect.appendChild(option(T.scanLists + 1, "ALL", attrs.scanList === T.scanLists + 1));
+  if (attrs.scanList > T.scanLists + 1) {
+    scanSelect.appendChild(option(attrs.scanList, "?" + attrs.scanList, true));
+  }
+  scan.appendChild(scanSelect);
+
+  const mod = cell();
+  const modSelect = document.createElement("select");
+  modSelect.dataset.field = "modulation";
+  Object.keys(T.modulation).forEach((name) => {
+    if (name === "MODULATION_UKNOWN") return;        // 仅作哨兵值，不是可选调制
+    const value = T.modulation[name];
+    modSelect.appendChild(option(value, T.modulationLabels[name] || name, record.modulation === value));
+  });
+  mod.appendChild(modSelect);
+
+  const last = cell();
+  const toggle = document.createElement("button");
+  toggle.textContent = "▸";
+  toggle.title = "更多选项 / 清空信道";
+  last.appendChild(toggle);
+
+  /* ---- 详情行 ---- */
+  const details = document.createElement("tr");
+  details.className = "details";
+  details.dataset.index = String(index);
+  details.dataset.details = "1";
+  details.hidden = true;
+
+  const td = document.createElement("td");
+  td.colSpan = 12;
+  const grid = document.createElement("div");
+  grid.className = "detail-grid";
+
+  const checkbox = (field, label, value) => {
+    const wrap = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.dataset.field = field;
+    input.checked = !!value;
+    wrap.appendChild(input);
+    wrap.appendChild(document.createTextNode(label));
+    return wrap;
+  };
+
+  const selectFor = (field, entries, current) => {
+    const wrap = document.createElement("label");
+    wrap.appendChild(document.createTextNode(field === "stepSetting" ? "步进" :
+                                            field === "band" ? "频段(校准)" : field));
+    const select = document.createElement("select");
+    select.dataset.field = field;
+    entries.forEach(([value, label]) => select.appendChild(option(value, label, current === value)));
+    wrap.appendChild(select);
+    return wrap;
+  };
+
+  grid.appendChild(checkbox("txLock", "发射锁", record.txLock));
+  grid.appendChild(checkbox("busyChannelLock", "繁忙禁发", record.busyChannelLock));
+  grid.appendChild(checkbox("reverse", "收发倒置", record.reverse));
+  grid.appendChild(checkbox("dtmfDecodingEnable", "DTMF 解码", record.dtmfDecodingEnable));
+  grid.appendChild(checkbox("exclude", "扫描排除", attrs.exclude));
+
+  const ptt = document.createElement("label");
+  ptt.appendChild(document.createTextNode("PTT ID"));
+  const pttSelect = document.createElement("select");
+  pttSelect.dataset.field = "dtmfPttIdTxMode";
+  T.pttIdLabels.forEach((label, value) =>
+    pttSelect.appendChild(option(value, label, record.dtmfPttIdTxMode === value)));
+  ptt.appendChild(pttSelect);
+  grid.appendChild(ptt);
+
+  const compander = document.createElement("label");
+  compander.appendChild(document.createTextNode("压扩"));
+  const companderSelect = document.createElement("select");
+  companderSelect.dataset.field = "compander";
+  [[0, "OFF"], [1, "1"], [2, "2"], [3, "3"]].forEach(([value, label]) =>
+    companderSelect.appendChild(option(value, label, attrs.compander === value)));
+  compander.appendChild(companderSelect);
+  grid.appendChild(compander);
+
+  grid.appendChild(selectFor("stepSetting",
+                             T.steps.map((step, i) => [i, step.name.replace("STEP_", "")]),
+                             record.stepSetting));
+
+  const bandWrap = selectFor("band",
+                             WebFlash.bandLabels.map((label, i) => [i, label]),
+                             attrs.band);
+  const bandSelect = bandWrap.querySelector("select");
+  bandSelect.dataset.touched = view.used ? "1" : "";   // 新信道的频段跟着频率自动走
+  bandSelect.addEventListener("change", () => { bandSelect.dataset.touched = "1"; });
+  grid.appendChild(bandWrap);
+
+  const clear = document.createElement("button");
+  clear.className = "danger";
+  clear.textContent = "清空此信道";
+  clear.addEventListener("click", () => {
+    const index2 = Number(tr.dataset.index);
+    if (!confirm("确定清空信道 " + (index2 + 1) + "？")) return;
+    state.edits.set(index2, { clear: true, changed: { record: true, attrs: true, name: true } });
+    state.added.delete(index2);
+    updateRowState(index2);
+    updateButtons();
+  });
+  grid.appendChild(clear);
+
+  td.appendChild(grid);
+  details.appendChild(td);
+
+  toggle.addEventListener("click", () => {
+    details.hidden = !details.hidden;
+    toggle.textContent = details.hidden ? "▸" : "▾";
+  });
+
+  /* 任何输入变化都重算这一行 */
+  const onEdit = () => {
+    const index2 = Number(tr.dataset.index);
+    const result = readRow(tr, details, index2);
+
+    if (result.error) {
+      freqInput.classList.add("invalid");
+      return;
+    }
+
+    freqInput.classList.remove("invalid");
+
+    /* 新信道：把频段（影响发射功率校准）跟着频率自动填好，用户手动改过就不再覆盖 */
+    if (state.added.has(index2) && result.record.rxFrequency > 0) {
+      const bandSelect = details.querySelector('[data-field="band"]');
+
+      if (bandSelect && !bandSelect.dataset.touched) {
+        const wanted = WebFlash.bandForFrequency(result.record.rxFrequency);
+
+        if (Number(bandSelect.value) !== wanted) {
+          bandSelect.value = String(wanted);
+          result.attrs.band = wanted;
+        }
+      }
+    }
+
+    const original = state.added.has(index2) ? null : state.views[index2];
+    const changed = compareToOriginal(original, result);
+
+    if (!changed.record && !changed.attrs && !changed.name) {
+      state.edits.delete(index2);
+    } else {
+      state.edits.set(index2, {
+        record: result.record, attrs: result.attrs, name: result.name, changed: changed
+      });
+    }
+
+    updateRowState(index2);
+    updateButtons();
+  };
+
+  tr.addEventListener("input", onEdit);
+  tr.addEventListener("change", onEdit);
+  details.addEventListener("input", onEdit);
+  details.addEventListener("change", onEdit);
+
+  return [tr, details];
+}
+
+function compareToOriginal(original, result) {
+  if (!original) {
+    return { record: true, attrs: true, name: true };
+  }
+
+  const sameRecord =
+    result.record.rxFrequency === original.record.rxFrequency &&
+    result.record.txOffsetFrequency === original.record.txOffsetFrequency &&
+    result.record.rxCode === original.record.rxCode &&
+    result.record.txCode === original.record.txCode &&
+    result.record.rxCodeType === original.record.rxCodeType &&
+    result.record.txCodeType === original.record.txCodeType &&
+    result.record.txOffsetDirection === original.record.txOffsetDirection &&
+    result.record.modulation === original.record.modulation &&
+    result.record.reverse === original.record.reverse &&
+    result.record.channelBandwidth === original.record.channelBandwidth &&
+    result.record.outputPower === original.record.outputPower &&
+    result.record.busyChannelLock === original.record.busyChannelLock &&
+    result.record.txLock === original.record.txLock &&
+    result.record.dtmfDecodingEnable === original.record.dtmfDecodingEnable &&
+    result.record.dtmfPttIdTxMode === original.record.dtmfPttIdTxMode &&
+    result.record.stepSetting === original.record.stepSetting;
+
+  const sameAttrs =
+    result.attrs.band === original.attrs.band &&
+    result.attrs.compander === original.attrs.compander &&
+    result.attrs.exclude === original.attrs.exclude &&
+    result.attrs.scanList === original.attrs.scanList;
+
+  return { record: !sameRecord, attrs: !sameAttrs, name: result.name !== original.name };
+}
+
+/* 从一行（含详情行）读出完整的新状态。频率非法时返回 error。 */
+function readRow(tr, details, index) {
+  const field = (name) => tr.querySelector('[data-field="' + name + '"]') ||
+                          details.querySelector('[data-field="' + name + '"]');
+  const bool = (name) => field(name).checked ? 1 : 0;
+  const number = (name) => Number(field(name).value);
+
+  const original = state.added.has(index) || !state.views[index]
+    ? null
+    : state.views[index].record;
+
+  const rxText = field("rxFrequency").value.trim();
+  const rxFrequency = rxText === "" ? (original ? original.rxFrequency : 0)
+                                    : WebFlash.parseFrequency(rxText);
+
+  if (rxFrequency === null) {
+    return { error: "接收频率格式无法识别" };
+  }
+
+  const offsetText = field("txOffsetFrequency").value.trim();
+  let txOffsetFrequency = 0;
+
+  if (offsetText !== "") {
+    const parsed = WebFlash.parseFrequency(offsetText);
+
+    if (parsed === null) {
+      return { error: "偏移量格式无法识别" };
+    }
+
+    txOffsetFrequency = parsed;
+  }
+
+  const codePair = (name) => {
+    const value = field(name).value;
+    const [type, code] = value.split("-");
+
+    return { type: Number(type), code: Number(code) };
+  };
+
+  const rx = codePair("rxCode");
+  const tx = codePair("txCode");
+
+  const attrs = {
+    band: number("band"),
+    // 已经读到的未使用位必须原样保留：固件用 band > 6 表示“信道已删除”
+    compander: number("compander"),
+    exclude: bool("exclude"),
+    scanList: number("scanList")
+  };
+
+  const record = {
+    rxFrequency: rxFrequency,
+    txOffsetFrequency: txOffsetFrequency,
+    rxCode: rx.code,
+    txCode: tx.code,
+    rxCodeType: rx.type,
+    txCodeType: tx.type,
+    txOffsetDirection: number("txOffsetDirection"),
+    modulation: number("modulation"),
+    outputPower: number("outputPower"),
+    channelBandwidth: number("channelBandwidth"),
+    txLock: bool("txLock"),
+    busyChannelLock: bool("busyChannelLock"),
+    reverse: bool("reverse"),
+    dtmfDecodingEnable: bool("dtmfDecodingEnable"),
+    dtmfPttIdTxMode: number("dtmfPttIdTxMode"),
+    stepSetting: number("stepSetting")
+  };
+
+  return { record: record, attrs: attrs, name: field("name").value };
+}
+
+function updateRowState(index) {
+  const edit = state.edits.get(index);
+  document.querySelectorAll('tr[data-index="' + index + '"]').forEach((tr) => {
+    if (tr.dataset.details) return;
+    const modified = edit && (edit.clear || edit.changed.record || edit.changed.attrs || edit.changed.name);
+    tr.classList.toggle("changed", !!modified);
+  });
+}
+
+function visibleIndices() {
+  const search = $("inpSearch").value.trim().toLowerCase();
+  const showAll = $("chkAll").checked;
+  const indices = [];
+
+  for (let i = 0; i < T.mrChannelsMax; i++) {
+    const view = state.views[i];
+    const isAdded = state.added.has(i);
+
+    if (!showAll && !view.used && !isAdded) continue;
+
+    if (search !== "") {
+      const name = view.name.toLowerCase();
+      const freq = WebFlash.formatFrequency(view.record.rxFrequency);
+      const index = String(i + 1);
+
+      if (!name.includes(search) && !freq.includes(search) && !index.includes(search)) continue;
+    }
+
+    indices.push(i);
+  }
+
+  return indices;
+}
+
+function render() {
+  const tbody = $("channelRows");
+  tbody.textContent = "";
+
+  if (!state.memory && state.added.size === 0) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  for (const index of visibleIndices()) {
+    const view = state.added.has(index)
+      ? {
+          index: index, used: false,
+          name: "",
+          record: {
+            rxFrequency: 0, txOffsetFrequency: 0, rxCode: 0, txCode: 0,
+            rxCodeType: 0, txCodeType: 0, txOffsetDirection: 0, modulation: 0,
+            outputPower: 7, channelBandwidth: 0, txLock: 0, busyChannelLock: 0,
+            reverse: 0, dtmfDecodingEnable: 0, dtmfPttIdTxMode: 0, stepSetting: 5
+          },
+          attrs: { band: 5, compander: 0, exclude: 0, scanList: 0 }
+        }
+      : state.views[index];
+
+    const rows = buildRow(index, view);
+    fragment.appendChild(rows[0]);
+    fragment.appendChild(rows[1]);
+    updateRowState(index);
+  }
+
+  tbody.appendChild(fragment);
+
+  const used = state.views.filter((v) => v.used).length;
+  $("txtStats").textContent = "已编程 " + used + " 条 / 共 " + T.mrChannelsMax +
+                              " 条，显示 " + tbody.querySelectorAll("tr:not([data-details])").length + " 行";
+}
+
+/* ------------------------------------------------------------- 写回改动 */
+
+async function writeChanges() {
+  const changes = [];
+
+  for (const [index, edit] of state.edits) {
+    if (edit.clear) {
+      changes.push({ index: index, clear: true });
+      continue;
+    }
+
+    if (!edit.changed.record && !edit.changed.attrs && !edit.changed.name) continue;
+
+    if (!edit.record || !edit.record.rxFrequency) {
+      throw new Error("信道 " + (index + 1) + " 还没有填写接收频率");
+    }
+
+    const change = { index: index };
+
+    if (edit.changed.record) change.record = WebFlash.encodeRecord(edit.record);
+    if (edit.changed.attrs) change.attrs = WebFlash.encodeAttributes(edit.attrs);
+    if (edit.changed.name) change.name = WebFlash.encodeName(edit.name);
+
+    changes.push(change);
+  }
+
+  if (changes.length === 0) {
+    log("没有需要写入的改动");
+    return;
+  }
+
+  if (!confirm("将写入 " + changes.length + " 条信道到电台，继续？")) return;
+
+  log("写入 " + changes.length + " 条信道…");
+  await WebFlash.writeChannelChanges(state.radio, changes, {
+    onProgress: (done, total, index) => setProgress(done, total, "写入信道 " + (index + 1))
+  });
+
+  log("写入完成，重新读取以确认…", "ok");
+  await readAll();
+  setStatus("写入完成");
+}
+
+/* -------------------------------------------------------------- JSON 备份 */
+
+function exportJson() {
+  const channels = [];
+
+  for (const view of state.views) {
+    if (!view.used) continue;
+    channels.push({
+      index: view.index,
+      name: view.name,
+      rxFrequency: view.record.rxFrequency,
+      txOffsetFrequency: view.record.txOffsetFrequency,
+      txOffsetDirection: view.record.txOffsetDirection,
+      rxCode: view.record.rxCode, txCode: view.record.txCode,
+      rxCodeType: view.record.rxCodeType, txCodeType: view.record.txCodeType,
+      modulation: view.record.modulation,
+      outputPower: view.record.outputPower,
+      channelBandwidth: view.record.channelBandwidth,
+      txLock: view.record.txLock,
+      busyChannelLock: view.record.busyChannelLock,
+      reverse: view.record.reverse,
+      dtmfDecodingEnable: view.record.dtmfDecodingEnable,
+      dtmfPttIdTxMode: view.record.dtmfPttIdTxMode,
+      stepSetting: view.record.stepSetting,
+      band: view.attrs.band,
+      compander: view.attrs.compander,
+      exclude: view.attrs.exclude,
+      scanList: view.attrs.scanList
+    });
+  }
+
+  const blob = new Blob([JSON.stringify({ tool: "webflash", version: 1, channels: channels }, null, 2)],
+                        { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "uvk1-k5v3-channels.json";
+  link.click();
+  URL.revokeObjectURL(link.href);
+  log("已导出 " + channels.length + " 条信道", "ok");
+}
+
+async function importJson(file) {
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+
+  if (!parsed || !Array.isArray(parsed.channels)) {
+    throw new Error("不是本工具导出的 JSON");
+  }
+
+  if (!confirm("导入 " + parsed.channels.length + " 条信道到编辑区（不会立即写入电台）？")) return;
+
+  for (const entry of parsed.channels) {
+    const index = Number(entry.index);
+
+    if (!(index >= 0 && index < T.mrChannelsMax)) continue;
+
+    state.edits.set(index, {
+      record: {
+        rxFrequency: entry.rxFrequency, txOffsetFrequency: entry.txOffsetFrequency,
+        rxCode: entry.rxCode, txCode: entry.txCode,
+        rxCodeType: entry.rxCodeType, txCodeType: entry.txCodeType,
+        txOffsetDirection: entry.txOffsetDirection, modulation: entry.modulation,
+        outputPower: entry.outputPower, channelBandwidth: entry.channelBandwidth,
+        txLock: entry.txLock, busyChannelLock: entry.busyChannelLock,
+        reverse: entry.reverse, dtmfDecodingEnable: entry.dtmfDecodingEnable,
+        dtmfPttIdTxMode: entry.dtmfPttIdTxMode, stepSetting: entry.stepSetting
+      },
+      attrs: {
+        band: entry.band, compander: entry.compander,
+        exclude: entry.exclude, scanList: entry.scanList
+      },
+      name: entry.name,
+      changed: { record: true, attrs: true, name: true }
+    });
+  }
+
+  log("已导入 " + parsed.channels.length + " 条，请检查后点“写回改动”", "ok");
+  render();
+  updateButtons();
+}
+
+/* ------------------------------------------------------------------ 字库 */
+
+async function refreshFontStatus() {
+  if (!connected()) {
+    $("fontStatus").textContent = "未连接电台";
+    return;
+  }
+
+  try {
+    const info = await state.radio.fontInfo();
+    $("fontStatus").innerHTML =
+      (info.present
+        ? '<span class="pill ok">已安装</span> '
+        : '<span class="pill warn">未安装（汉字会显示为空白）</span> ') +
+      "版本 " + info.version + "，电台期望 " + info.size + " 字节 / " + info.characters + " 字";
+  } catch (error) {
+    $("fontStatus").innerHTML = '<span class="pill warn">读取失败</span> ' + error.message;
+  }
+}
+
+function pickFontFile(file) {
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    const blob = new Uint8Array(reader.result);
+    const check = WebFlash.validateFontBlob(blob);
+
+    if (!check.ok) {
+      state.fontBlob = null;
+      $("fontFileInfo").innerHTML = '<span class="pill warn">文件不匹配</span> ' + check.error;
+    } else {
+      state.fontBlob = blob;
+      $("fontFileInfo").innerHTML = '<span class="pill ok">校验通过</span> ' +
+        file.name + "，" + blob.length + " 字节，" + T.font.charCount + " 个字";
+    }
+
+    updateButtons();
+  };
+
+  reader.readAsArrayBuffer(file);
+}
+
+async function flashFont() {
+  if (!state.fontBlob) return;
+
+  const start = state.fontOffset || 0;
+
+  if (start === 0 &&
+      !confirm("将把 " + state.fontBlob.length + " 字节字库写入电台外部 Flash，过程约 1 分钟，继续？")) {
+    return;
+  }
+
+  const verify = $("chkVerify").checked;
+  const started = Date.now();
+  let lastReport = 0;
+
+  state.fontOffset = start;
+
+  await WebFlash.writeFontBlob(state.radio, state.fontBlob, {
+    startOffset: start,
+    verify: verify,
+    onProgress: (done, total, elapsed, verifying) => {
+      state.fontOffset = done;
+      setProgress(done, total, verifying ? "回读校验" : "写入字库");
+
+      if (Date.now() - lastReport > 2000) {
+        lastReport = Date.now();
+        const percent = Math.floor((done / total) * 100);
+        log((verifying ? "校验 " : "写入 ") + percent + "%（" +
+            Math.round(elapsed / 1000) + " 秒）");
+      }
+    }
+  }).catch((error) => {
+    /* 断点已经记下来了：再点一次会从断点继续，而不是重写 205 KB */
+    const done = error.writtenBytes || state.fontOffset || 0;
+    state.fontOffset = done;
+    error.message += "（已写入 " + done + "/" + state.fontBlob.length +
+                     " 字节，再次点击可从 " + Math.floor((done / state.fontBlob.length) * 100) +
+                     "% 继续）";
+    throw error;
+  });
+
+  state.fontOffset = 0;
+  log("字库写入完成，用时 " + Math.round((Date.now() - started) / 1000) + " 秒" +
+      (verify ? "（含回读校验）" : ""), "ok");
+  setStatus("字库写入完成");
+  await refreshFontStatus();
+}
+
+/* ------------------------------------------------------------- 事件绑定 */
+
+document.querySelectorAll("nav button").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b === button));
+    document.querySelectorAll("section.tab").forEach((section) => {
+      section.hidden = section.id !== "tab-" + button.dataset.tab;
+    });
+  });
+});
+
+$("btnConnect").addEventListener("click", () => guard(connect));
+$("btnRead").addEventListener("click", () => guard(readAll));
+$("btnWrite").addEventListener("click", () => guard(writeChanges));
+$("btnReset").addEventListener("click", () => guard(async () => {
+  if (!confirm("重启电台？未保存的改动会丢失。")) return;
+  await state.radio.reset();
+  log("已发送重启命令", "ok");
+}));
+
+$("btnAdd").addEventListener("click", () => {
+  for (let i = 0; i < T.mrChannelsMax; i++) {
+    if (!state.views[i].used && !state.added.has(i)) {
+      state.added.add(i);
+      state.edits.set(i, {
+        record: null, attrs: null, name: "",
+        changed: { record: true, attrs: true, name: true }
+      });
+      render();
+      setStatus("新增信道 " + (i + 1) + "，填好频率后点“写回改动”");
+      updateButtons();
+      return;
+    }
+  }
+
+  log("没有空信道了", "err");
+});
+
+$("inpSearch").addEventListener("input", render);
+$("chkAll").addEventListener("change", render);
+$("btnExport").addEventListener("click", exportJson);
+$("inpImport").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (file) guard(() => importJson(file));
+  event.target.value = "";
+});
+
+$("btnFontInfo").addEventListener("click", () => guard(refreshFontStatus));
+$("inpFont").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (file) pickFontFile(file);
+});
+$("btnFontWrite").addEventListener("click", () => guard(flashFont));
+
+render();
+updateButtons();
+log("工具就绪。点“连接电台”开始（Chrome/Edge + Web Serial）。");
+</script>
+</body>
+</html>

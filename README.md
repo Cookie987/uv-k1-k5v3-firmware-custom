@@ -80,6 +80,33 @@ Specialized presets extend Fusion for specific uses:
   to preserve stability and memory headroom.
 - **Custom** remains a manually configured build based directly on the hidden technical default.
 
+### Chinese channel names
+
+- Memory-channel names can hold UTF-8, so a name can mix Hanzi and Latin
+  characters (up to 5 Hanzi, or 15 ASCII characters per name).
+- Names are written from the host with the browser tool in
+  [`tools/webflash/`](tools/webflash/), which uses the browser's own IME. The
+  radio draws them on the name band and its `ChName` editor can still edit a
+  Chinese name character by character (the cursor moves whole characters, and
+  typing Latin over a Hanzi replaces the whole character).
+- The 12x12 bitmap font lives in the external SPI flash, so it costs nothing in
+  the internal firmware flash and survives firmware updates. It is uploaded once
+  from the host: either with the browser tool (which also programmes channels) or
+  with `tools/cn_font/upload_cn_font.py`.
+- Enabled by the `ENABLE_CHINESE` build option (on by default). Without the font
+  blob uploaded, Hanzi are simply left blank; ASCII names keep working.
+
+### Web programming tool
+
+- [`tools/webflash/index.html`](tools/webflash/) is a single-page Web Serial tool
+  (Chrome/Edge, no server, no external resources) that reads and writes memory
+  channels — including UTF-8 names entered with the browser's own IME — and
+  flashes the Chinese font.
+- It only touches the channel, name, attribute and font regions: calibration data
+  and the multiboot slots are never written.
+- Regenerate its constant tables after changing the firmware's CTCSS/DCS/power/step
+  tables with `python tools/webflash/gen_tables.py`.
+
 ### Radio and signal handling
 
 - Reworked output-power levels:
@@ -389,6 +416,11 @@ Examples:
 ./compile-firmware.sh Fusion -DENABLE_FEAT_F4HWN_GAME=ON
 ./compile-firmware.sh Fusion -DSQL_TONE=600
 ```
+
+Chinese channel names (`ENABLE_CHINESE`, on by default) add a few kilobytes of
+code to every edition but no font data, which lives in the external flash. If an
+edition ever runs out of internal flash, the build reports the overflow at link
+time; drop the feature from that edition with `-DENABLE_CHINESE=OFF`.
 
 To prepare the rolling development firmware:
 

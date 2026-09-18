@@ -41,6 +41,9 @@
 
 #include "app/app.h"
 #include "app/dtmf.h"
+#ifdef ENABLE_CHINESE
+    #include "cn_font.h"
+#endif
 
 #include "driver/backlight.h"
 #include "driver/bk4819.h"
@@ -109,6 +112,12 @@ void Main(void)
     BOARD_ADC_GetBatteryInfo(&gBatteryCurrentVoltage, &gBatteryCurrent);
 
     SETTINGS_InitEEPROM();
+
+#ifdef ENABLE_CHINESE
+    /* Probe the Chinese font blob in the external flash before anything can be
+     * drawn: without it, Hanzi are simply left blank. */
+    CN_FONT_Init();
+#endif
 
 #ifdef ENABLE_FEAT_F4HWN_RXTX_LOG
     RXTX_LOG_Init();

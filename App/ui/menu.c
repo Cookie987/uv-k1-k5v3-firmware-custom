@@ -23,6 +23,9 @@
 #include "../app/menu.h"
 #include "../bitmaps.h"
 #include "../board.h"
+#ifdef ENABLE_CHINESE
+    #include "../cn_font.h"
+#endif
 #include "../dcs.h"
 #include "../driver/backlight.h"
 #include "../driver/bk4819.h"
@@ -830,6 +833,89 @@ static void UI_MENU_DrawFixedCapsule(const char *text, uint8_t cap_left,
 }
 #endif
 
+#ifdef ENABLE_CHINESE
+/* Named-channel editor for a name that already holds Hanzi.
+ *
+ * The historical editor draws with the big 7x16 font at a fixed 8-pixel cell
+ * pitch on one text line. A Hanzi is 12x12 and three bytes wide, so this one
+ * walks edit[] character by character, measures every slot in pixels and keeps
+ * the cursor in byte offsets - the cursor can never land in the middle of a
+ * Hanzi, and moving the cursor keeps the ASCII keys working.
+ *
+ * Chinese names themselves are written from the host tool (tools/webflash/),
+ * where a real keyboard and IME are available; there is no on-radio input.
+ *
+ * LCD rows used (gFrameBuffer row n is LCD rows (n + 1) * 8 .. +7):
+ *   24..39   name cell, i.e. the "line 2" big-font line
+ */
+static void UI_MENU_DrawCnNameEditor(unsigned int x1, unsigned int x2)
+{
+    uint8_t slot_x[MEM_NAME_SLOTS];
+    uint8_t slot_w[MEM_NAME_SLOTS];
+    uint8_t slot_count = 0;
+    int8_t  cursor_slot = -1;
+    uint8_t x = (uint8_t)x1;
+    int     bi = 0;
+
+    /* The name itself, one slot at a time. */
+    while (bi < (int)CHANNEL_NAME_MAX_BYTES && x < (uint8_t)x2 && slot_count < MEM_NAME_SLOTS)
+    {
+        slot_x[slot_count] = x;
+
+        if (CN_FONT_CharSize(&edit[bi]) == 3u)
+        {
+            char ch[4];
+
+            memcpy(ch, &edit[bi], 3);
+            ch[3] = 0;
+
+            UI_PrintStringSmallAtPixel(ch, x, (uint8_t)(x + CN_FONT_GLYPH_WIDTH), 26u, 37u, 0u);
+
+            slot_w[slot_count] = CN_FONT_GLYPH_WIDTH;
+            if (edit_index == bi)
+                cursor_slot = (int8_t)slot_count;
+
+            x = (uint8_t)(x + CN_FONT_GLYPH_WIDTH + 1u);
+            bi += 3;
+        }
+        else
+        {
+            slot_w[slot_count] = 6u;
+            if (edit_index == bi)
+                cursor_slot = (int8_t)slot_count;
+
+            if (edit[bi] != MEM_NAME_EDIT_PAD && edit[bi] != 0)
+            {
+                char ch[2];
+
+                ch[0] = edit[bi];
+                ch[1] = 0;
+                UI_PrintStringSmallAtPixel(ch, x, (uint8_t)(x + 6u), 26u, 37u, 0u);
+            }
+
+            x = (uint8_t)(x + 7u);
+            bi++;
+        }
+
+        slot_count++;
+    }
+
+    /* Underline every slot, caret on the one being edited. */
+    for (uint8_t s = 0; s < slot_count; s++)
+    {
+        if ((int8_t)s == cursor_slot)
+        {
+            UI_PrintStringSmallAtPixel("^", slot_x[s], (uint8_t)(slot_x[s] + slot_w[s]), 32u, 39u, 0u);
+        }
+        else
+        {
+            for (uint8_t c = 0; c < slot_w[s] && (uint8_t)(slot_x[s] + c) < LCD_WIDTH; c++)
+                UI_DrawPixelBuffer(gFrameBuffer, (uint8_t)(slot_x[s] + c), 39u, true);
+        }
+    }
+}
+#endif
+
 void UI_DisplayMenu(void)
 {
     const unsigned int menu_list_width = 6; // max no. of characters on the menu list (left side)
@@ -1187,6 +1273,16 @@ void UI_DisplayMenu(void)
                 }
 
                 SETTINGS_FetchChannelName(String, gSubMenuSelection);
+#ifdef ENABLE_CHINESE
+                if (SETTINGS_ChannelNameHasCjk(String))
+                {   /* The value line is the big-font "line 2", i.e. LCD rows
+                     * 24..39; centre the 12-pixel Hanzi band inside it. */
+                    UI_PrintStringSmallChannelNameBand(String, menu_item_x1, menu_item_x2, 26u);
+                    already_printed = true;
+                    break;
+                }
+#endif
+                String[10] = 0;   /* the value column fits ten big-font columns */
                 UI_PrintString(String[0] ? String : "--", menu_item_x1, menu_item_x2, 2, 8);
                 already_printed = true;
                 break;
@@ -1210,17 +1306,43 @@ void UI_DisplayMenu(void)
                 if (edit_index < 0)
                 {   // show the channel name
                     SETTINGS_FetchChannelName(String, gSubMenuSelection);
-                    char *pPrintStr = String[0] ? String : "--";
-                    UI_PrintString(pPrintStr, menu_item_x1, menu_item_x2, 2, 8);
+#ifdef ENABLE_CHINESE
+                    if (SETTINGS_ChannelNameHasCjk(String))
+                    {   // 12-pixel Hanzi band centred in the two-row value line
+                        UI_PrintStringSmallChannelNameBand(String[0] ? String : "--",
+                                                          menu_item_x1, menu_item_x2, 26u);
+                    }
+                    else
+#endif
+                    {
+                        char *pPrintStr = String[0] ? String : "--";
+
+                        String[10] = 0;   /* the value column fits ten big-font columns */
+                        UI_PrintString(pPrintStr, menu_item_x1, menu_item_x2, 2, 8);
+                    }
                 }
+#ifdef ENABLE_CHINESE
+                else if (CN_FONT_StringHasCjk(edit))
+                {   // a name that already holds Hanzi: 12-pixel slots, no on-radio Hanzi input
+                    UI_MENU_DrawCnNameEditor(menu_item_x1, menu_item_x2);
+                }
+#endif
                 else
-                {   // show the channel name being edited
-                    //UI_PrintString(edit, menu_item_x1, 0, 2, 8);
-                    UI_PrintString(edit, menu_item_x1, menu_item_x2, 2, 8);
-                    if (edit_index < 10) {
-                        // UI_PrintString("^", menu_item_x1 - 1 + (8 * edit_index),0, 4, 8); // show the cursor
+                {   /* The historical ASCII editor: a fixed grid of 8-pixel columns.
+                     * The buffer may hold up to 15 bytes now, which does not fit
+                     * the value column, so only the columns that fit are drawn -
+                     * drawing all of them would run off the framebuffer row. */
+                    char shown[MEM_NAME_ASCII_COLUMNS + 1];
+
+                    memcpy(shown, edit, MEM_NAME_ASCII_COLUMNS);
+                    shown[MEM_NAME_ASCII_COLUMNS] = 0;
+
+                    UI_PrintString(shown, menu_item_x1, menu_item_x2, 2, 8);
+
+                    if (edit_index < MEM_NAME_ASCII_COLUMNS) {
                         uint8_t x = menu_item_x1 - 1;
-                        for (uint8_t i = 0; i < 10; i++) 
+
+                        for (uint8_t i = 0; i < MEM_NAME_ASCII_COLUMNS; i++) 
                         {
                             if (i != edit_index) 
                             {

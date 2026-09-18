@@ -287,6 +287,16 @@ enable_feature(ENABLE_FEAT_F4HWN_LOGO)
 enable_feature(ENABLE_FEAT_F4HWN_LOGO_SAV)
 enable_feature(ENABLE_FEAT_F4HWN_MENU_CAT)
 
+# Chinese (UTF-8) channel names: a 12x12 bitmap font kept in the external SPI
+# flash (the blob is ~200 KiB, far beyond the internal flash), a UTF-8 aware name
+# storage and renderer, and a name editor whose cursor moves whole Hanzi.
+# Names themselves are written from the host (tools/webflash/). Adds the
+# 0x0740/0x0742/0x0744 UART commands used by tools/cn_font/upload_cn_font.py to
+# push the font onto the radio.
+enable_feature(ENABLE_CHINESE
+    cn_font.c
+)
+
 if(ENABLE_FEAT_F4HWN_LOGO_SAV AND NOT ENABLE_FEAT_F4HWN_LOGO)
     message(FATAL_ERROR "ENABLE_FEAT_F4HWN_LOGO_SAV requires ENABLE_FEAT_F4HWN_LOGO.")
 endif()

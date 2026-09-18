@@ -277,6 +277,39 @@ static uint8_t ScanProgress_GetActiveScanList(void)
     return scan_list;
 }
 
+#ifdef ENABLE_CHINESE
+/* True when this VFO is showing a memory-channel name that needs the CJK
+ * renderer. Such a name fills the whole two-row value block, so the frequency
+ * has to be drawn somewhere else (see the small 3x5 line below). */
+static bool UI_MAIN_ChannelNameIsCjk(const uint16_t channel)
+{
+    char name[CHANNEL_NAME_MAX_BYTES + 1];
+
+    if (!IS_MR_CHANNEL(channel))
+        return false;
+
+    SETTINGS_FetchChannelName(name, channel);
+
+    return SETTINGS_ChannelNameHasCjk(name);
+}
+
+/* Frequency text for the small 3x5 line. Trailing zeros in the decimals carry no
+ * information - the value is stored in 10 Hz steps - and dropping them is what
+ * lets the text share a line with the modulation, tone, power and bandwidth
+ * indicators: "145.50000" becomes "145.5" (5 characters instead of 9). */
+static void UI_MAIN_FormatSmallFrequency(char *pBuffer, const uint32_t frequency)
+{
+    size_t length;
+
+    sprintf(pBuffer, "%u.%05u", frequency / 100000u, frequency % 100000u);
+
+    length = strlen(pBuffer);
+
+    while (length > 2u && pBuffer[length - 1] == '0' && pBuffer[length - 2] != '.')
+        pBuffer[--length] = 0;
+}
+#endif
+
 static void UI_MAIN_DrawScanListName(void)
 {
     const uint8_t scan_list = ScanProgress_GetActiveScanList();
@@ -1878,6 +1911,20 @@ void UI_DisplayMain(void)
                             sprintf(String, "CH-%04u", gEeprom.ScreenChannel[vfo_num] + 1);
                         }
 
+#ifdef ENABLE_CHINESE
+                        /* A Hanzi is 12 pixels tall and needs the small mixed-script
+                         * renderer, so it takes the whole two-row block. That leaves
+                         * no room for the frequency line, which MDF_NAME_FREQ would
+                         * otherwise show below the name. */
+                        if (SETTINGS_ChannelNameHasCjk(String))
+                        {
+                            const uint8_t y_top = (uint8_t)((line + 1u) * 8u);
+
+                            UI_PrintStringSmallAtPixel(String, 33, 0, y_top,
+                                                      (uint8_t)(y_top + 15u), 0u);
+                            break;
+                        }
+#endif
                         if (gEeprom.CHANNEL_DISPLAY_MODE == MDF_NAME) {
                             String[10] = 0;
                             UI_PrintString(String, 33, 0, line, 8);
@@ -1890,7 +1937,11 @@ void UI_DisplayMain(void)
                                 UI_PrintString(String, 33, 0, line, 8);
                             }
                             else
-                            {
+                            {   /* The 6-pixel font runs off the row after about ten
+                                 * characters, so a longer ASCII name is shown
+                                 * truncated - the same ten the big font shows. */
+                                String[10] = 0;
+
                                 if(activeTxVFO == vfo_num) {
                                     UI_PrintStringSmallBold(String, 32 + 4, 0, line);
                                 }
@@ -2054,6 +2105,17 @@ void UI_DisplayMain(void)
         const FREQ_Config_t *pConfig = (mode == VFO_MODE_TX) ? vfoInfo->pTX : vfoInfo->pRX;
         int8_t shift = 0;
 
+#ifdef ENABLE_CHINESE
+        /* A Chinese channel name takes the whole two-row value block, so the
+         * frequency cannot sit next to it. It moves to the 3x5 slot where the
+         * step normally is - but only when the Display Setting actually asks for
+         * the frequency (MDF_NAME_FREQ). With MDF_NAME the user asked for the
+         * name alone, and the step stays where it is. */
+        const bool moveFreqToStepSlot =
+            (gEeprom.CHANNEL_DISPLAY_MODE == MDF_NAME_FREQ) &&
+            UI_MAIN_ChannelNameIsCjk(gEeprom.ScreenChannel[vfo_num]);
+#endif
+
         switch((int)pConfig->CodeType)
         {
             case 1:
@@ -2082,28 +2144,69 @@ void UI_DisplayMain(void)
                     UI_PrintStringSmallNormal(String, 2, 0, 6);
                 }
 
-                if((vfoInfo->StepFrequency / 100) < 100)
-                {
-                    sprintf(String, "%d.%02uK", vfoInfo->StepFrequency / 100, vfoInfo->StepFrequency % 100);
+#ifdef ENABLE_CHINESE
+                if (moveFreqToStepSlot)
+                {   /* 中文名占了整个名字区，且设置为「名称+频率」：这里用小号字显示频率，
+                     * 取代原来这一步的步进显示 */
+                    UI_MAIN_FormatSmallFrequency(String, frequency);
+                    GUI_DisplaySmallest(String, 46, 49, false, true);
                 }
                 else
+#endif
                 {
-                    sprintf(String, "%dK", vfoInfo->StepFrequency / 100);               
+                    if((vfoInfo->StepFrequency / 100) < 100)
+                    {
+                        sprintf(String, "%d.%02uK", vfoInfo->StepFrequency / 100, vfoInfo->StepFrequency % 100);
+                    }
+                    else
+                    {
+                        sprintf(String, "%dK", vfoInfo->StepFrequency / 100);               
+                    }
+                    UI_PrintStringSmallNormal(String, 46, 0, 6);
                 }
-                UI_PrintStringSmallNormal(String, 46, 0, 6);
             }
         }
         else
         {
-            if ((s != NULL) && (s[0] != '\0')) {
-                GUI_DisplaySmallest(s, 58, line == 0 ? 17 : 49, false, true);
+            /* The frequency takes this slot when a Chinese name is shown: it then
+             * overrides whatever else lives here, tone or step, because the name
+             * block no longer has room for it. */
+#ifdef ENABLE_CHINESE
+            if (!moveFreqToStepSlot)
+#endif
+            {
+                if ((s != NULL) && (s[0] != '\0')) {
+                    GUI_DisplaySmallest(s, 58, line == 0 ? 17 : 49, false, true);
+                }
             }
 
             if ((t != NULL) && (t[0] != '\0')) {
                 GUI_DisplaySmallest(t, 3, line == 0 ? 17 : 49, false, true);
             }
 
-            GUI_DisplaySmallest(String, 68 + shift, line == 0 ? 17 : 49, false, true);
+#ifdef ENABLE_CHINESE
+            if (moveFreqToStepSlot)
+            {   /* 中文名占了整个名字区，且设置为「名称+频率」：这里用小号字显示频率，
+                 * 取代原来这一步的亚音或步进显示。这一行很挤（24 功率、43 方向、
+                 * 51 "R"、91 带宽），所以文字要短，并且宁可左移也不要压到带宽标签。 */
+                int x = 58;                      /* where the tone/step used to sit */
+                int width;
+
+                UI_MAIN_FormatSmallFrequency(String, frequency);
+                width = 4 * (int)strlen(String);
+
+                if (x + width > 90)              /* keep clear of the bandwidth label */
+                    x = 90 - width;
+                if (x < 55)                      /* and of the "R" marker at 51 */
+                    x = 55;
+
+                GUI_DisplaySmallest(String, (uint8_t)x, line == 0 ? 17 : 49, false, true);
+            }
+            else
+#endif
+            {
+                GUI_DisplaySmallest(String, 68 + shift, line == 0 ? 17 : 49, false, true);
+            }
         }
 #else
         UI_PrintStringSmallNormal(s, LCD_WIDTH + 24, 0, line + 1);

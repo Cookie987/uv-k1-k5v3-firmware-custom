@@ -450,7 +450,7 @@ void RADIO_ConfigureChannel(const unsigned int VFO, const unsigned int configure
     RADIO_ApplyOffset(pVfo);
 
     if (IS_MR_CHANNEL(channel))
-    {   // 16 bytes allocated to the channel name but only 10 used, the rest are 0's
+    {   // fits the 16-byte name slot: 15 bytes of UTF-8, or 10 ASCII characters
         SETTINGS_FetchChannelName(pVfo->Name, channel);
     }
 

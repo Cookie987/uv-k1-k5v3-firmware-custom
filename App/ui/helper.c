@@ -16,6 +16,9 @@
 
 #include <string.h>
 
+#ifdef ENABLE_CHINESE
+    #include "cn_font.h"
+#endif
 #include "driver/st7565.h"
 #include "external/printf/printf.h"
 #include "font.h"
@@ -75,6 +78,13 @@ void UI_PrintString(const char *pString, uint8_t Start, uint8_t End, uint8_t Lin
         if (pString[i] > ' ' && pString[i] < 127)
         {
             const unsigned int index = pString[i] - ' ' - 1;
+
+            /* A glyph is 7 bytes wide: never write past the end of the row. A
+             * caller that hands in a long string (a 15-byte channel name, say)
+             * used to run off the framebuffer here. */
+            if (ofs + 7u > LCD_WIDTH)
+                break;
+
             memcpy(gFrameBuffer[Line + 0] + ofs, &gFontBig[index][0], 7);
             memcpy(gFrameBuffer[Line + 1] + ofs, &gFontBig[index][7], 7);
         }
@@ -411,3 +421,158 @@ void UI_StatusClear(void)
 {
     memset(gStatusLine, 0, sizeof(gStatusLine));
 }
+
+#ifdef ENABLE_CHINESE
+
+/* Write one framebuffer pixel given absolute LCD coordinates. Rows 0..7 are the
+ * status line, which these helpers never touch (the caller always works inside
+ * the framed area, YStart >= 8). */
+static void UI_CjkPixel(uint8_t x, uint8_t y, bool fill)
+{
+    const uint8_t line = (uint8_t)((y - 8u) >> 3);
+    const uint8_t bit  = (uint8_t)(1u << (y & 7u));
+
+    if (x >= LCD_WIDTH || y < 8u || line >= FRAME_LINES)
+        return;
+
+    if (fill)
+        gFrameBuffer[line][x] |= bit;
+    else
+        gFrameBuffer[line][x] &= (uint8_t)~bit;
+}
+
+/* Blit one 12x12 Hanzi. It is vertically centred inside [YStart, YEnd] so that a
+ * name keeps the same optical baseline whether it sits in a 12-pixel band or in
+ * a taller one. */
+static void UI_DrawCjkGlyph(uint16_t Unicode, uint8_t x, uint8_t YStart, uint8_t YEnd, bool fill)
+{
+    const int16_t Index = CN_FONT_UnicodeToIndex(Unicode);
+    const uint8_t Range = (uint8_t)(YEnd - YStart + 1u);
+    uint16_t Bitmap[CN_FONT_GLYPH_ROWS];
+    uint8_t y;
+
+    if (Index < 0)
+        return;   // not in the font: draw nothing rather than a wrong glyph
+
+    y = YStart;
+    if (Range >= CN_FONT_GLYPH_ROWS)
+        y = (uint8_t)(YStart + ((Range - CN_FONT_GLYPH_ROWS) / 2u));
+
+    CN_FONT_ReadBitmap((uint16_t)Index, Bitmap);
+
+    for (uint8_t row = 0; row < CN_FONT_GLYPH_ROWS; row++)
+    {
+        const uint16_t RowData = Bitmap[row];
+        const uint8_t  py = (uint8_t)(y + row);
+
+        for (uint8_t col = 0; col < CN_FONT_GLYPH_WIDTH; col++)
+        {
+            if ((uint8_t)(x + col) >= LCD_WIDTH)
+                break;
+
+            if (RowData & (uint16_t)(0x8000u >> col))
+                UI_CjkPixel((uint8_t)(x + col), py, fill);
+        }
+    }
+}
+
+static void UI_DrawSmallStringAtPixel(const char *pString, uint8_t Start, uint8_t End,
+                                      uint8_t YStart, uint8_t YEnd, uint8_t LatinDownWhenMixed,
+                                      bool fill)
+{
+    const uint8_t  EngWidth  = (uint8_t)ARRAY_SIZE(gFontSmall[0]);   /* 6 */
+    const uint8_t  EngHeight = 7u;
+    const uint8_t  Range     = (uint8_t)(YEnd - YStart + 1u);
+    const bool     bHasCjk   = CN_FONT_StringHasCjk(pString);
+    const size_t   Width     = CN_FONT_PixelWidth(pString);
+    uint8_t        x         = Start;
+    size_t         i         = 0;
+
+    if (End > Start && Width < (size_t)(End - Start))
+        x = (uint8_t)(x + ((End - Start - (uint8_t)Width) / 2u));
+
+    while (pString[i] != 0)
+    {
+        if (CN_FONT_CharSize(&pString[i]) == 3u)
+        {
+            UI_DrawCjkGlyph(CN_FONT_Utf8ToUnicode(&pString[i]), x, YStart, YEnd, fill);
+            x = (uint8_t)(x + CN_FONT_GLYPH_WIDTH + 1u);
+            i += 3u;
+            continue;
+        }
+
+        {
+            uint8_t y = YStart;
+
+            if (Range >= EngHeight)
+                y = (uint8_t)(YStart + ((Range - EngHeight) / 2u));
+
+            /* Latin sits a couple of pixels high next to Hanzi: nudge it down
+             * when the string mixes both scripts. */
+            if (bHasCjk && fill)
+            {
+                const uint8_t Down = (uint8_t)(LatinDownWhenMixed + 1u);
+
+                if (y <= (uint8_t)(255u - Down))
+                    y = (uint8_t)(y + Down);
+            }
+
+            if (y < 8u)
+                y = 8u;
+
+            if (pString[i] > ' ' && pString[i] < 127)
+            {
+                const unsigned int Index = (unsigned int)(pString[i] - ' ' - 1);
+
+                if (Index < ARRAY_SIZE(gFontSmall))
+                {
+                    const uint8_t *pGlyph = gFontSmall[Index];
+                    const uint8_t  Line   = (uint8_t)((y - 8u) >> 3);
+                    const uint8_t  Bit    = (uint8_t)(y & 7u);
+
+                    for (uint8_t col = 0; col < EngWidth; col++)
+                    {
+                        if ((uint8_t)(x + col) >= LCD_WIDTH)
+                            break;
+
+                        const uint8_t Bits = pGlyph[col];
+                        uint8_t      *pLow = &gFrameBuffer[Line][x + col];
+
+                        if (fill)
+                            *pLow |= (uint8_t)(Bits << Bit);
+                        else
+                            *pLow &= (uint8_t)~(uint8_t)(Bits << Bit);
+
+                        if ((uint8_t)(Bit + EngHeight) > 8u && (uint8_t)(Line + 1u) < FRAME_LINES)
+                        {
+                            uint8_t *pHigh = &gFrameBuffer[Line + 1u][x + col];
+
+                            if (fill)
+                                *pHigh |= (uint8_t)(Bits >> (8u - Bit));
+                            else
+                                *pHigh &= (uint8_t)~(uint8_t)(Bits >> (8u - Bit));
+                        }
+                    }
+                }
+            }
+
+            x = (uint8_t)(x + EngWidth + 1u);
+            i++;
+        }
+    }
+}
+
+void UI_PrintStringSmallAtPixel(const char *pString, uint8_t Start, uint8_t End,
+                                uint8_t YStart, uint8_t YEnd, uint8_t LatinDownWhenMixed)
+{
+    UI_DrawSmallStringAtPixel(pString, Start, End, YStart, YEnd, LatinDownWhenMixed, true);
+}
+
+void UI_PrintStringSmallChannelNameBand(const char *pString, uint8_t Start, uint8_t End, uint8_t YTop)
+{
+    UI_PrintStringSmallAtPixel(pString, Start, End, YTop,
+                              (uint8_t)(YTop + (CN_FONT_GLYPH_ROWS - 1u)), 0u);
+}
+
+#endif
+

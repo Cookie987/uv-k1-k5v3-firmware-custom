@@ -283,6 +283,21 @@ extern char              edit[17];
 extern int               edit_index;
 extern bool              edit_is_uppercase;
 
+/* Move the cursor to the next/previous character boundary (a Hanzi is three
+ * bytes of UTF-8, everything else one). */
+int  MENU_MemNameNextSlotIndex(int Index);
+int  MENU_MemNamePrevSlotIndex(int Index);
+
+/* The historical ASCII name editor is a fixed grid of this many columns, 8 pixels
+ * apart: ten columns plus the left margin is what fits the value column. A longer
+ * name is shown truncated there - the same ten characters the main screen shows. */
+#define MEM_NAME_ASCII_COLUMNS  10
+
+/* Placeholder for an unused slot; '_' cannot be used, it is a real symbol. */
+#define MEM_NAME_EDIT_PAD   ' '
+/* Worst case one slot per byte: all Latin, no Hanzi. */
+#define MEM_NAME_SLOTS      CHANNEL_NAME_MAX_BYTES
+
 void UI_DisplayMenu(void);
 int UI_MENU_GetCurrentMenuId();
 uint8_t UI_MENU_GetMenuIdx(uint8_t id);

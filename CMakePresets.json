@@ -90,6 +90,7 @@
                 "ENABLE_FEAT_F4HWN_LOGO": false,
                 "ENABLE_FEAT_F4HWN_LOGO_SAV": false,
                 "ENABLE_FEAT_F4HWN_MENU_CAT": false,
+                "ENABLE_CHINESE": true,
                 "ENABLE_FEAT_F4HWN_MULTIBOOT": false,
                 "ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY": false,
                 "ENABLE_FEAT_F4HWN_OVERLAY_APPS": false,

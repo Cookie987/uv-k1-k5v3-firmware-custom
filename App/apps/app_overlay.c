@@ -374,7 +374,14 @@ static void app_trivfo_get(uint8_t index, app_trivfo_info_t *info)
     if (gSetting_set_gui) info->flags |= APP_TRIVFO_GUI_CLASSIC;
     if (gSetting_set_ptt_session) info->flags |= APP_TRIVFO_PTT_ONEPUSH;
     if (IS_MR_CHANNEL(vfo->CHANNEL_SAVE))
-        memcpy(info->name, vfo->Name, sizeof(info->name) - 1u);
+    {
+#ifdef ENABLE_CHINESE
+        /* The overlay ABI field is 10 ASCII bytes; a Chinese name cannot be
+         * carried there, so send none rather than a broken sequence. */
+        if (!SETTINGS_ChannelNameHasCjk(vfo->Name))
+#endif
+            memcpy(info->name, vfo->Name, sizeof(info->name) - 1u);
+    }
 }
 
 static void app_trivfo_select(uint8_t vfo)

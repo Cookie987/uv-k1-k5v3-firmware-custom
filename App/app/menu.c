@@ -25,6 +25,9 @@
 #include "app/scanner.h"
 #include "audio.h"
 #include "board.h"
+#ifdef ENABLE_CHINESE
+    #include "cn_font.h"
+#endif
 #include "driver/backlight.h"
 #include "driver/bk4819.h"
 #include "driver/eeprom.h"
@@ -627,11 +630,15 @@ void MENU_AcceptSetting(void)
             return;
 
         case MENU_MEM_NAME:
-            for (int i = 9; i >= 0; i--) {
-                if (edit[i] != ' ' && edit[i] != 0x00 && edit[i] != 0xff)
+            /* Drop the trailing edit pads. A pad is an ASCII space, so this walk
+             * can never stop in the middle of a UTF-8 sequence. */
+            for (int i = (int)CHANNEL_NAME_MAX_BYTES - 1; i >= 0; i--) {
+                const uint8_t c = (uint8_t)edit[i];
+                if (c != (uint8_t)' ' && c != 0x00 && c != 0xff)
                     break;
-                edit[i] = ' ';
+                edit[i] = 0;
             }
+            edit[CHANNEL_NAME_MAX_BYTES] = 0;
 
             SETTINGS_SaveChannelName(gSubMenuSelection, edit);
             return;
@@ -1522,6 +1529,65 @@ static bool MENU_IsEditingName() {
         && edit_index >= 0;
 }
 
+/* Move the cursor to the next/previous character boundary. A channel name is
+ * stored as UTF-8 and a Hanzi costs three bytes, so a plain ++/-- could land in
+ * the middle of a sequence and corrupt the name on the next keystroke. */
+int MENU_MemNameNextSlotIndex(int Index)
+{
+    if (Index < 0)
+        return 0;
+
+    if (Index < (int)CHANNEL_NAME_MAX_BYTES && (uint8_t)edit[Index] >= 0xE0u)
+        Index += 3;
+    else
+        Index++;
+
+    if (Index > (int)CHANNEL_NAME_MAX_BYTES)
+        Index = (int)CHANNEL_NAME_MAX_BYTES;
+
+    return Index;
+}
+
+int MENU_MemNamePrevSlotIndex(int Index)
+{
+    if (Index > (int)CHANNEL_NAME_MAX_BYTES)
+        Index = (int)CHANNEL_NAME_MAX_BYTES;
+
+    if (Index <= 0)
+        return 0;
+
+    Index--;
+
+    while (Index > 0 && ((uint8_t)edit[Index] & 0xC0u) == 0x80u)
+        Index--;
+
+    return Index;
+}
+
+/* Overwrite the character at the cursor with a single ASCII character. When the
+ * slot held a Hanzi, blank the two bytes it leaves behind, so replacing a Hanzi
+ * with a letter cannot leave stray UTF-8 continuation bytes in the name. */
+static void MENU_MemNamePutAsciiChar(char c)
+{
+    const int Index = edit_index;
+
+    if (Index < 0 || Index >= (int)CHANNEL_NAME_MAX_BYTES)
+        return;
+
+#ifdef ENABLE_CHINESE
+    if ((uint8_t)edit[Index] >= 0xE0u)
+    {
+        if (Index + 1 < (int)CHANNEL_NAME_MAX_BYTES)
+            edit[Index + 1] = ' ';
+        if (Index + 2 < (int)CHANNEL_NAME_MAX_BYTES)
+            edit[Index + 2] = ' ';
+    }
+#endif
+
+    edit[Index] = c;
+    edit_last_key = 255;
+}
+
 static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 {
     uint8_t  Offset;
@@ -1536,16 +1602,15 @@ static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
     if (UI_MENU_GetCurrentMenuId() == MENU_MEM_NAME && edit_index >= 0)
     {   // currently editing the channel name
-        if (edit_index >= 10)
+        if (edit_index >= (int)CHANNEL_NAME_MAX_BYTES)
             return;
 
         uint8_t key_idx = Key - KEY_0;
 
         if (bKeyHeld)
         {
-            edit[edit_index] = '0' + key_idx;
-            edit_last_key = 255;
-            
+            MENU_MemNamePutAsciiChar((char)('0' + key_idx));
+
             gRequestDisplayScreen = DISPLAY_MENU;
             return;
         }
@@ -1569,7 +1634,7 @@ static void MENU_Key_0_to_9(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
         {
             c -= 32;
         }
-        edit[edit_index] = c;
+        MENU_MemNamePutAsciiChar(c);
 
         gRequestDisplayScreen = DISPLAY_MENU;
         return;
@@ -1765,7 +1830,7 @@ static void MENU_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
 
             if (edit_index > 0)
             {   // step back one character while editing the channel name
-                edit_index--;
+                edit_index = MENU_MemNamePrevSlotIndex(edit_index);
                 edit_last_key = 255;
                 gAskForConfirmation = 0;
                 gRequestDisplayScreen = DISPLAY_MENU;
@@ -1932,12 +1997,15 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
 
             SETTINGS_FetchChannelName(edit, gSubMenuSelection);
 
-            // pad the channel name out with ' '
-            size_t len = strlen(edit);
-            if (len < 10)
+            // pad the channel name out with ' ' so the editor always sees a full-width buffer
             {
-                memset(edit + len, ' ', 10 - len);
-                edit[10] = '\0';
+                const size_t len = strlen(edit);
+
+                if (len < CHANNEL_NAME_MAX_BYTES)
+                {
+                    memset(edit + len, ' ', CHANNEL_NAME_MAX_BYTES - len);
+                    edit[CHANNEL_NAME_MAX_BYTES] = '\0';
+                }
             }
 
             edit_index = 0;  // 'edit_index' is going to be used as the cursor position
@@ -1951,15 +2019,18 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
             return;
         }
         else
-        if (edit_index >= 0 && edit_index < 10)
+        if (edit_index >= 0 && edit_index < (int)CHANNEL_NAME_MAX_BYTES)
         {   // editing the channel name characters
             edit_last_key = 255;
 
             if (bKeyHeld) {
-                edit_index = 10;
+                edit_index = (int)CHANNEL_NAME_MAX_BYTES;
             }
-            else if (++edit_index < 10) {
-                return;
+            else {
+                edit_index = MENU_MemNameNextSlotIndex(edit_index);
+                if (edit_index < (int)CHANNEL_NAME_MAX_BYTES) {
+                    return;
+                }
             }
 
             // exit
@@ -2081,10 +2152,9 @@ static void MENU_Key_STAR(const bool bKeyPressed, const bool bKeyHeld)
     if (UI_MENU_GetCurrentMenuId() == MENU_MEM_NAME && edit_index >= 0)
     {   // currently editing the channel name
 
-        if (edit_index < 10)
+        if (edit_index < (int)CHANNEL_NAME_MAX_BYTES)
         {
-            edit[edit_index] = !bKeyHeld ? '-' : '*';
-            edit_last_key = 255;
+            MENU_MemNamePutAsciiChar(!bKeyHeld ? '-' : '*');
 
             gRequestDisplayScreen = DISPLAY_MENU;
         }
@@ -2149,23 +2219,22 @@ static void MENU_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
 
     if (UI_MENU_GetCurrentMenuId() == MENU_MEM_NAME && gIsInSubMenu && edit_index >= 0)
     {   // change the character
-        if (edit_index < 10 && Direction != 0)
+        if (edit_index < (int)CHANNEL_NAME_MAX_BYTES && Direction != 0)
         {
             const char   unwanted[] = "$%&!\"':;?^`|{}_";
             char         c          = edit[edit_index] + Direction;
             unsigned int i          = 0;
-            while (i < sizeof(unwanted) && c >= 32 && c <= 126)
-            {
-                if (c == unwanted[i++])
-                {   // choose next character
-                    c += Direction;
-                    i = 0;
+                while (i < sizeof(unwanted) && c >= 32 && c <= 126)
+                {
+                    if (c == unwanted[i++])
+                    {   // choose next character
+                        c += Direction;
+                        i = 0;
+                    }
                 }
-            }
-            edit[edit_index] = (c < 32) ? 126 : (c > 126) ? 32 : c;
-            edit_last_key = 255;
+                MENU_MemNamePutAsciiChar((char)((c < 32) ? 126 : (c > 126) ? 32 : c));
 
-            gRequestDisplayScreen = DISPLAY_MENU;
+                gRequestDisplayScreen = DISPLAY_MENU;
         }
         return;
     }
@@ -2305,10 +2374,10 @@ void MENU_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
                 gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
 
-                if (edit_index < 10)
-                {
+                if (edit_index < (int)CHANNEL_NAME_MAX_BYTES)
+                {   // toggle the letter case, and type '#' on a long press
                     if (bKeyHeld)
-                        edit[edit_index] = '#';
+                        MENU_MemNamePutAsciiChar('#');
 
                     edit_is_uppercase = !edit_is_uppercase;
                     edit_last_key = 255;
