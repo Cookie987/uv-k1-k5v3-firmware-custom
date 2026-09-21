@@ -268,7 +268,7 @@ static inline bool ScanProgress_GetBit(const uint8_t *map, uint16_t ch)
 
 static uint8_t ScanProgress_GetActiveScanList(void)
 {
-    const uint8_t max_scan_list = MR_CHANNELS_LIST + 1;
+    const uint8_t max_scan_list = SCAN_LIST_MODE_MIX;
     uint8_t scan_list = gEeprom.SCAN_LIST_DEFAULT;
 
     if (scan_list == 0 || scan_list > max_scan_list)
@@ -319,7 +319,9 @@ static void UI_MAIN_DrawScanListName(void)
     strcpy(text, "SCAN LIST ");
     char *p = text + 10;                     // sizeof("SCAN LIST ") - 1
 
-    if (scan_list > MR_CHANNELS_LIST) {
+    if (scan_list == SCAN_LIST_MODE_MIX) {
+        *p++ = 'M'; *p++ = 'I'; *p++ = 'X';
+    } else if (scan_list == SCAN_LIST_MODE_ALL) {
         *p++ = 'A'; *p++ = 'L'; *p++ = 'L';
     } else {
         const char *name = gListName[scan_list - 1];
@@ -345,13 +347,7 @@ static bool ScanProgress_ChannelBelongsToList(uint16_t channel, const ChannelAtt
     if (att->band > BAND7_470MHz)
         return false;
 
-    if (scan_list > MR_CHANNELS_LIST && att->scanlist != 0)
-        return true;
-
-    if (scan_list > 0 && att->scanlist == (MR_CHANNELS_LIST + 1))
-        return true;
-
-    if (scan_list == 0 || scan_list != att->scanlist)
+    if (!RADIO_IsChannelInScanList(att->scanlist, scan_list))
         return false;
 
     if (gEeprom.SCAN_LIST_ENABLED) {
@@ -1370,7 +1366,7 @@ static void UI_PrintScanRangeCss(char *String, uint8_t LabelX, uint8_t ValueX, u
 static void UI_PrintActionPickerLabel(uint8_t index, uint8_t line, bool big)
 {
     char label[20];
-    strcpy(label, gSubMenu_SIDEFUNCTIONS[index].name);
+    strcpy(label, gSubMenu_SIDEFUNCTIONS[index]);
 
     char *newline = strchr(label, '\n');
     if (newline != NULL)
@@ -1410,14 +1406,14 @@ void UI_DisplayMain(void)
         uint8_t next = selection + 1;
 
         if (previous == 0)
-            previous = gSubMenu_SIDEFUNCTIONS_size - 1;
-        if (next >= gSubMenu_SIDEFUNCTIONS_size)
+            previous = SIDEFUNCTION_COUNT - 1;
+        if (next >= SIDEFUNCTION_COUNT)
             next = 1;
 
         UI_PrintActionPickerLabel(previous, 1, false);
         UI_PrintActionPickerLabel(selection, 2, true);
         UI_PrintActionPickerLabel(next, 4, false);
-        if (!ACTION_IsAvailable(gSubMenu_SIDEFUNCTIONS[selection].id))
+        if (!ACTION_IsAvailable(selection))
             UI_PrintStringSmallNormalInverse("N/A", 53, 0, 6);
         ST7565_BlitFullScreen();
         return;
@@ -1821,11 +1817,11 @@ void UI_DisplayMain(void)
                 {
                     // show the scan list assigment symbols
                     uint8_t countList = att->scanlist;
-                    if(countList > MR_CHANNELS_LIST + 1) {
+                    if(countList > SCAN_LIST_MODE_ALL) {
                         countList = 0;
                     }
 
-                    if (countList == MR_CHANNELS_LIST + 1) {
+                    if (countList == SCAN_LIST_MODE_ALL) {
                         displayStr = "ALL";
                     } 
                     else if (countList == 0) {

@@ -474,36 +474,53 @@ const char* const gSubMenu_SCRAMBLER[] =
     #endif
 #endif
 
-const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
-{
-    {"NONE",            ACTION_OPT_NONE},
-    {"FLASH\nLIGHT",    ACTION_OPT_FLASHLIGHT},
-    {"POWER",           ACTION_OPT_POWER},
-    {"MONITOR",         ACTION_OPT_MONITOR},
-    {"SCAN",            ACTION_OPT_SCAN},
-    {"VOX",             ACTION_OPT_VOX},
-    {"FM RADIO",        ACTION_OPT_FM},
-    {"1750Hz",          ACTION_OPT_1750},
-    {"LOCK\nKEYPAD",    ACTION_OPT_KEYLOCK},
-    {"VFO A\nVFO B",    ACTION_OPT_A_B},
-    {"VFO\nMEM",        ACTION_OPT_VFO_MR},
-    {"MODE",            ACTION_OPT_SWITCH_DEMODUL},
-    {"RX MODE",         ACTION_OPT_RXMODE},
-    {"MAIN ONLY",       ACTION_OPT_MAINONLY},
-    {"PTT",             ACTION_OPT_PTT},
-    {"WIDE\nNARROW",    ACTION_OPT_WN},
-    {"MUTE",            ACTION_OPT_MUTE},
-    {"RxA",             ACTION_OPT_RXA},
-    {"RF LOG",          ACTION_OPT_RXTX_LOG},
-    {"BEAM",            ACTION_OPT_BEAM},
-    {"POWER\nHIGH",     ACTION_OPT_POWER_HIGH},
-    {"REMOVE\nOFFSET",  ACTION_OPT_REMOVE_OFFSET},
-    {"FOX HUNT",        ACTION_OPT_FOXHUNT},
-    {"BEACON",          ACTION_OPT_BEACON},
-};
+#define SIDEFUNCTION_NAMES(X) \
+    X(ACTION_OPT_NONE,           "NONE") \
+    X(ACTION_OPT_FLASHLIGHT,     "FLASH\nLIGHT") \
+    X(ACTION_OPT_POWER,          "POWER") \
+    X(ACTION_OPT_MONITOR,        "MONITOR") \
+    X(ACTION_OPT_SCAN,           "SCAN") \
+    X(ACTION_OPT_VOX,            "VOX") \
+    X(ACTION_OPT_FM,             "FM RADIO") \
+    X(ACTION_OPT_1750,           "1750Hz") \
+    X(ACTION_OPT_KEYLOCK,        "LOCK\nKEYPAD") \
+    X(ACTION_OPT_A_B,            "VFO A\nVFO B") \
+    X(ACTION_OPT_VFO_MR,         "VFO\nMEM") \
+    X(ACTION_OPT_SWITCH_DEMODUL, "MODE") \
+    X(ACTION_OPT_RXMODE,         "RX MODE") \
+    X(ACTION_OPT_MAINONLY,       "MAIN ONLY") \
+    X(ACTION_OPT_PTT,            "PTT") \
+    X(ACTION_OPT_WN,             "WIDE\nNARROW") \
+    X(ACTION_OPT_MUTE,           "MUTE") \
+    X(ACTION_OPT_RXA,            "RxA") \
+    X(ACTION_OPT_RXTX_LOG,       "RF LOG") \
+    X(ACTION_OPT_BEAM,           "BEAM") \
+    X(ACTION_OPT_POWER_HIGH,     "POWER\nHIGH") \
+    X(ACTION_OPT_REMOVE_OFFSET,  "REMOVE\nOFFSET") \
+    X(ACTION_OPT_FOXHUNT,        "FOX HUNT") \
+    X(ACTION_OPT_BEACON,         "BEACON")
 
-const uint8_t gSubMenu_SIDEFUNCTIONS_size = ARRAY_SIZE(gSubMenu_SIDEFUNCTIONS);
-static_assert(ARRAY_SIZE(gSubMenu_SIDEFUNCTIONS) == ACTION_OPT_LEN);
+#define SIDEFUNCTION_NAME_ENTRY(action, name) [action] = name,
+const char *const gSubMenu_SIDEFUNCTIONS[ACTION_OPT_LEN] =
+{
+    SIDEFUNCTION_NAMES(SIDEFUNCTION_NAME_ENTRY)
+};
+#undef SIDEFUNCTION_NAME_ENTRY
+
+#define SIDEFUNCTION_COUNT_ENTRY(action, name) + 1u
+#define SIDEFUNCTION_MASK_ENTRY(action, name) | (1u << (action))
+enum
+{
+    SIDEFUNCTION_NAME_COUNT = 0 SIDEFUNCTION_NAMES(SIDEFUNCTION_COUNT_ENTRY),
+    SIDEFUNCTION_NAME_MASK  = 0 SIDEFUNCTION_NAMES(SIDEFUNCTION_MASK_ENTRY)
+};
+#undef SIDEFUNCTION_COUNT_ENTRY
+#undef SIDEFUNCTION_MASK_ENTRY
+#undef SIDEFUNCTION_NAMES
+
+static_assert(ACTION_OPT_LEN < 32u);
+static_assert((int)SIDEFUNCTION_NAME_COUNT == (int)ACTION_OPT_LEN);
+static_assert(SIDEFUNCTION_NAME_MASK == ((1u << ACTION_OPT_LEN) - 1u));
 
 bool    gIsInSubMenu;
 uint8_t gMenuCursor;
@@ -757,7 +774,7 @@ bool    edit_is_uppercase = false;
 static void UI_MENU_DrawTopRightRoundedBadge(const char *text, const uint8_t line, const bool center_in_area, const uint8_t area_x1, const uint8_t area_x2)
 {
     const size_t length = strlen(text);
-    const size_t char_pitch = ARRAY_SIZE(gFontSmall[0]) + 1u;
+    const size_t char_pitch = FONT_SMALL_WIDTH + 1u;
     const size_t text_width = length * char_pitch;
     const size_t capsule_span = text_width + 1u; // matches UI_PrintStringSmallNormalInverse x_end computation
     uint8_t text_x;
@@ -811,7 +828,6 @@ static void UI_MENU_DrawTopRightRoundedBadge(const char *text, const uint8_t lin
     UI_PrintStringSmallNormalInverse(text, text_x, 0, line);
 }
 
-#ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
 /* Draw `text` (3x5 font) centred inside a fixed-width rounded inverse capsule:
  * left edge `cap_left`, inclusive width `cap_w`, on framebuffer page `line`. Same
  * capsule pattern as GUI_DisplaySmallestInverse (0x3E rounded ends, 0x7F body) but
@@ -831,7 +847,59 @@ static void UI_MENU_DrawFixedCapsule(const char *text, uint8_t cap_left,
         gFrameBuffer[line][x] ^= 0x7Fu;
     gFrameBuffer[line][cap_right] ^= 0x3Eu;
 }
-#endif
+
+static void UI_MENU_DrawScanMixSummary(const uint8_t area_x1,
+                                       const uint8_t area_x2)
+{
+    const uint8_t label_w = 35u;
+    const uint8_t count_w = 23u;
+    const uint8_t gap = 4u;
+    const uint8_t pair_w = label_w + gap + count_w;
+    const uint8_t label_x = (uint8_t)(area_x1 +
+                                      ((area_x2 - area_x1 + 1u - pair_w) / 2u));
+    uint32_t mask = gEeprom.SCAN_LIST_MIX_MASK & SCAN_LIST_MIX_MASK_ALL;
+    uint8_t selected = 0;
+    char count[6];
+
+    while (mask != 0u) {
+        selected += (uint8_t)(mask & 1u);
+        mask >>= 1;
+    }
+
+    sprintf(count, "%02u/%02u", (unsigned)selected,
+            (unsigned)MR_CHANNELS_LIST);
+    UI_MENU_DrawFixedCapsule("SELECTED", label_x, label_w, 6);
+    UI_MENU_DrawFixedCapsule(count, (uint8_t)(label_x + label_w + gap),
+                             count_w, 6);
+}
+
+static void UI_MENU_DrawScanMixEditor(void)
+{
+    char text[9];
+
+    // Keep the cursor centred, with two neighbouring lists above and below.
+    for (int8_t row = -2; row <= 2; row++) {
+        const uint8_t index = (uint8_t)((gScanMixEditorCursor + row +
+                                        MR_CHANNELS_LIST) % MR_CHANNELS_LIST);
+        const uint8_t line = (uint8_t)(3 + row);
+        const char *name = gListName[index];
+
+        if (IsEmptyName(name, sizeof(gListName[0])))
+            sprintf(text, "%02u", (unsigned)(index + 1));
+        else
+            sprintf(text, "%02u (%.3s)", (unsigned)(index + 1), name);
+
+        // The longest label ends at x=109; the compact ON capsule stays right-aligned.
+        if (row == 0) {
+            UI_PrintStringSmallBold(text, 54, 0, line);
+        } else {
+            UI_PrintStringSmallNormal(text, 54, 0, line);
+        }
+
+        if (gScanMixEditorMask & (1u << index))
+            UI_MENU_DrawFixedCapsule("ON", 115, 11, line);
+    }
+}
 
 #ifdef ENABLE_CHINESE
 /* Named-channel editor for a name that already holds Hanzi.
@@ -1040,6 +1108,13 @@ void UI_DisplayMenu(void)
        It also has to be set back to max when pressing the Exit key. */
 
     BACKLIGHT_TurnOn();
+
+    if (gScanMixEditorActive)
+    {
+        UI_MENU_DrawScanMixEditor();
+        ST7565_BlitFullScreen();
+        return;
+    }
 
     //#if !defined(ENABLE_SPECTRUM) || !defined(ENABLE_FMRADIO)
         uint8_t gaugeLine = 0;
@@ -1435,7 +1510,9 @@ void UI_DisplayMenu(void)
 
         case MENU_LIST_CH:
         case MENU_S_LIST:
-            if (gSubMenuSelection == MR_CHANNELS_LIST + 1)
+            if (gSubMenuSelection == SCAN_LIST_MODE_MIX && m == MENU_S_LIST)
+                strcpy(String, "MIX");
+            else if (gSubMenuSelection == SCAN_LIST_MODE_ALL)
                 strcpy(String, "ALL");
             else if (gSubMenuSelection == 0 && m == MENU_LIST_CH)
                 strcpy(String, "OFF");
@@ -1697,8 +1774,8 @@ void UI_DisplayMenu(void)
         case MENU_F2LONG:
         case MENU_MLONG:
         {
-            const uint8_t action = gSubMenu_SIDEFUNCTIONS[gSubMenuSelection].id;
-            strcpy(String, gSubMenu_SIDEFUNCTIONS[gSubMenuSelection].name);
+            const uint8_t action = gSubMenuSelection;
+            strcpy(String, gSubMenu_SIDEFUNCTIONS[gSubMenuSelection]);
             if (!ACTION_IsAvailable(action)) {
                 strcpy(top_right_badge, "N/A");
                 top_right_badge_line = 5;
@@ -1948,6 +2025,11 @@ void UI_DisplayMenu(void)
 
     if (top_right_badge[0] != '\0') {
         UI_MENU_DrawTopRightRoundedBadge(top_right_badge, top_right_badge_line, true, menu_item_x1, menu_item_x2);
+    }
+
+    if (m == MENU_S_LIST &&
+        gSubMenuSelection == SCAN_LIST_MODE_MIX) {
+        UI_MENU_DrawScanMixSummary(menu_item_x1, menu_item_x2);
     }
 
     if ((m == MENU_RESET    ||
