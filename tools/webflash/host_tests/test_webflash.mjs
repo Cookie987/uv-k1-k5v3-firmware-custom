@@ -750,6 +750,170 @@ console.log("\n== resilience ==");
     }
 }
 
+console.log("\n== channel order ==");
+
+{
+    /* --- the permutation itself ------------------------------------------ */
+
+    const list = [0, 1, 2, 3];
+
+    check(W.planReorder(list, 1, 1, false).length === 0, "reordering onto itself is a no-op");
+    check(W.planReorder(list, 9, 1, false) === null, "a slot outside the list is refused");
+
+    const down = W.planReorder(list, 0, 2, true);       // 0 goes after 2 -> [1, 2, 0, 3]
+    check(JSON.stringify(down) === JSON.stringify([{ from: 1, to: 0 }, { from: 2, to: 1 }, { from: 0, to: 2 }]),
+          "dropping below a row shifts the rows in between", JSON.stringify(down));
+    check(W.landingSlot(down, 0) === 2, "the moved channel lands on the row it was dropped on");
+
+    const up = W.planReorder(list, 3, 0, false);        // 3 goes before 0 -> [3, 0, 1, 2]
+    check(JSON.stringify(up) === JSON.stringify([{ from: 3, to: 0 }, { from: 0, to: 1 }, { from: 1, to: 2 },
+                                                 { from: 2, to: 3 }]),
+          "dropping above a row shifts the other way", JSON.stringify(up));
+
+    const swap = W.planReorder(list, 0, 1, true);       // one row down -> [1, 0, 2, 3]
+    check(JSON.stringify(swap) === JSON.stringify([{ from: 1, to: 0 }, { from: 0, to: 1 }]),
+          "the down arrow is a swap with the next row", JSON.stringify(swap));
+
+    /* A filtered view must not mention anything it does not show. */
+    const filtered = W.planReorder([0, 5, 900], 0, 900, true);
+    check(filtered.every((move) => [0, 5, 900].includes(move.from) && [0, 5, 900].includes(move.to)),
+          "reordering a filtered view only touches the shown slots", JSON.stringify(filtered));
+    check(filtered.some((move) => move.to === 5 && move.from === 900),
+          "hidden slots keep their slot numbers", JSON.stringify(filtered));
+
+    let refused = false;
+    try {
+        W.planPermutation([0, 1, 2], [0, 1, 1]);
+    } catch (error) {
+        refused = true;
+    }
+    check(refused, "a duplicate in the target order is refused");
+
+    /* --- the table, against a simulated radio ---------------------------- */
+
+    radio = new FakeRadio();
+    device = new W.Radio(new FakeTransport(radio), { timestamp: 0x0badf00d, timeout: 1500 });
+    await device.handshake();
+
+    const names = ["A", "B", "C", "D"];
+
+    names.forEach((name, i) => {
+        radio.eeprom.set(W.encodeRecord({
+            rxFrequency: 14500000 + (i + 1) * 2500, txOffsetFrequency: 0, rxCode: 0, txCode: 0,
+            rxCodeType: 0, txCodeType: 0, modulation: 0, txOffsetDirection: 0,
+            txLock: 0, busyChannelLock: 0, outputPower: 6, channelBandwidth: 0,
+            reverse: 0, dtmfDecodingEnable: 0, dtmfPttIdTxMode: 0, stepSetting: 4
+        }), 16 * i);
+        radio.eeprom.set(W.encodeAttributes({ band: 5, compander: 0, exclude: 0, scanList: 1 }),
+                         T.attrsBase + i * 2);
+        radio.eeprom.set(W.encodeName(name), T.namesBase + 16 * i);
+    });
+
+    const readBack = async () => {
+        const table = new W.SlotTable(await W.readChannelMemory(device));
+
+        return table;
+    };
+
+    const table = await readBack();
+
+    check(table.usedCount() === 4, "the four programmed channels are read", String(table.usedCount()));
+    check(table.content(0).name === "A" && table.content(3).name === "D", "they come back in slot order");
+    check(table.changedCount() === 0, "a freshly read table needs no writes");
+
+    /* Sorting with "show all" on: the empty slots must not cost a single write. */
+    const allSlots = Array.from({ length: T.mrChannelsMax }, (_, i) => i);
+    table.permute(allSlots, allSlots.slice().reverse());
+    table.permute(allSlots, allSlots.slice().reverse());
+    check(table.changedCount() === 0, "shuffling empty slots around writes nothing");
+
+    /* Move A to the end of the four programmed channels (0 -> after 3). */
+    const plan = table.reorder([0, 1, 2, 3], 0, 3, true);
+
+    check(table.changedCount() === 4, "a move marks every displaced slot as changed",
+          String(table.changedCount()));
+    check(table.content(3).name === "A" && table.content(0).name === "B",
+          "the moved channel is now last, the rest shifted up");
+
+    await W.writeChannelChanges(device, table.changes());
+
+    const after = await readBack();
+    check([0, 1, 2, 3].map((i) => after.content(i).name).join("") === "BCDA",
+          "the radio now holds the new order", [0, 1, 2, 3].map((i) => after.content(i).name).join(""));
+    check(after.content(3).record.rxFrequency === 14502500,
+          "the moved channel kept its frequency");
+    check(after.changedCount() === 0, "writing the plan leaves nothing pending");
+    check(W.decodeAttributes(radio.eeprom.slice(T.attrsBase + 3 * 2, T.attrsBase + 3 * 2 + 2)).scanList === 1,
+          "the moved channel kept its attributes");
+
+    /* Dragging a channel down onto an empty slot has to clear the slot it left,
+     * otherwise the radio would show the channel twice. */
+    const intoEmpty = await readBack();
+
+    intoEmpty.clear(1);                       // slot 1 becomes a gap between A and C
+    check(intoEmpty.changedCount() === 1, "clearing a slot is the only change so far");
+
+    intoEmpty.reorder([0, 1, 2, 3], 0, 1, true);
+
+    /* The radio already holds the order written above (B C D A), so the channel
+     * being dragged down out of slot 0 is B. */
+    const cleared = intoEmpty.changes().filter((change) => change.clear);
+    check(cleared.length === 1 && cleared[0].index === 0, "the slot the channel left is cleared",
+          JSON.stringify(cleared));
+    check(intoEmpty.content(1).name === "B" && !intoEmpty.used(0),
+          "the channel took the empty slot",
+          intoEmpty.content(1).name + "/" + String(intoEmpty.used(0)));
+    check(intoEmpty.changes().filter((change) => change.record && change.index !== 1).length === 0,
+          "nothing outside the two rows is rewritten");
+
+    /* A new channel is listed but never written while it has no frequency. */
+    const empty = await readBack();
+    const free = empty.firstFree();
+
+    check(free === 4, "the first free slot is the one after the programmed channels", String(free));
+
+    empty.add(free);
+    check(empty.listable(free) && empty.changedCount() === 0,
+          "a brand new channel is listed without being written");
+
+    empty.set(free, Object.assign(W.newContent(), {
+        pending: false,
+        name: "新",
+        record: Object.assign(W.newContent().record, { rxFrequency: 43950000 }),
+        attrs: W.newContent().attrs
+    }));
+    check(empty.changedCount() === 1 && empty.changes()[0].record && empty.changes()[0].name &&
+          empty.changes()[0].attrs, "once it has a frequency all three parts are written");
+
+    /* Backup round trip: the slot numbers carry the order. */
+    const json = table.json();
+    const restored = new W.SlotTable(null);
+
+    restored.load(json);
+    check(restored.json().map((entry) => entry.name).join("") === "BCDA",
+          "an exported list restores in the same order");
+    check(restored.changedCount() === 4,
+          "an import into an empty table wants exactly those four channels written",
+          String(restored.changedCount()));
+
+    /* Sorting by frequency, the way the page button does it. */
+    const sorted = new W.SlotTable(null);
+    [[0, 43950000, "high"], [1, 14550000, "low"], [2, 43350000, "mid"], [3, 0, "none"]].forEach(([i, hz]) => {
+        sorted.set(i, Object.assign(W.newContent(), {
+            pending: false,
+            record: Object.assign(W.newContent().record, { rxFrequency: hz })
+        }));
+    });
+
+    const ascending = [0, 1, 2].sort((a, b) =>
+        sorted.content(a).record.rxFrequency - sorted.content(b).record.rxFrequency);
+
+    sorted.permute([0, 1, 2], ascending);
+    check([0, 1, 2].map((i) => sorted.content(i).record.rxFrequency).join(",") ===
+          [14550000, 43350000, 43950000].join(","),
+          "sorting by frequency reorders the slots");
+}
+
 console.log("\n== page ==");
 
 {

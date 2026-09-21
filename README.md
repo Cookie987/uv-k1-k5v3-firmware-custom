@@ -102,6 +102,10 @@ Specialized presets extend Fusion for specific uses:
   (Chrome/Edge, no server, no external resources) that reads and writes memory
   channels — including UTF-8 names entered with the browser's own IME — and
   flashes the Chinese font.
+- Channels can be **reordered** before writing: drag a row, nudge it with `↑`/`↓`,
+  move it to the front/back or to a given channel number, or re-sort the whole
+  list by frequency or name. Reordering only rearranges the rows currently shown,
+  and the new order is written when you press write-back.
 - It only touches the channel, name, attribute and font regions: calibration data
   and the multiboot slots are never written.
 - Regenerate its constant tables after changing the firmware's CTCSS/DCS/power/step

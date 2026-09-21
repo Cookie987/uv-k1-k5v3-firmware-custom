@@ -67,7 +67,16 @@
   tbody tr.details label { color: var(--dim); display: flex; gap: 6px; align-items: center; }
   .table-wrap { max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
   td.num { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
-  td.idx { color: var(--dim); font-variant-numeric: tabular-nums; }
+  td.idx { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.ops { white-space: nowrap; }
+  td.ops button { padding: 2px 6px; line-height: 1.2; }
+  .grip { cursor: grab; color: var(--dim); user-select: none; margin-right: 4px; }
+  .grip:active { cursor: grabbing; }
+  tbody tr.dragging { opacity: .45; }
+  tbody tr.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
+  tbody tr.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
+  tbody tr.moved { background: #1f2c3d; }
+  .pos-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .col-name input { min-width: 150px; }
   .col-freq input { min-width: 110px; }
   .col-offset input { min-width: 90px; }
@@ -110,6 +119,13 @@
       <button id="btnRead" disabled>读取电台</button>
       <button id="btnWrite" class="primary" disabled>写回改动 <span id="txtChanged">(0)</span></button>
       <button id="btnAdd" disabled>新增信道</button>
+      <span class="hint">排序</span>
+      <select id="selSort" disabled>
+        <option value="freq-asc" selected>频率 低→高</option>
+        <option value="freq-desc">频率 高→低</option>
+        <option value="name">名称</option>
+      </select>
+      <button id="btnSort" disabled>应用</button>
       <span class="spacer"></span>
       <input type="text" id="inpSearch" placeholder="搜索名称/频率" style="width:180px">
       <label class="hint"><input type="checkbox" id="chkAll"> 显示全部 1024 条</label>
@@ -120,14 +136,17 @@
 
     <div class="hint" style="margin-bottom:8px">
       频率填 <code>145.50000</code>（MHz，带小数点）或 <code>145500</code>（kHz，不带小数点）；
-      名称最多 15 字节，即 5 个汉字或 15 个 ASCII 字符，超出会整个字符截断。
+      名称最多 15 字节，即 5 个汉字或 15 个 ASCII 字符，超出会整个字符截断。<br>
+      <b>调整顺序</b>：拖动左边的 <span class="grip">⠿</span> 可以把信道拖到别的位置，
+      或用行尾的 <code>↑</code> <code>↓</code> 一格一格挪（展开 <code>▸</code> 里还有“移到最前 / 移到最后 / 移到信道号…”）。
+      顺序只在点“写回改动”之后才进电台；重排会重写被挪动到的那些信道，写之前建议先“导出 JSON”。
     </div>
 
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th style="width:52px">信道</th>
+            <th style="width:68px">信道</th>
             <th style="width:170px">名称</th>
             <th style="width:120px">接收频率</th>
             <th style="width:96px">偏移方向</th>
@@ -137,8 +156,8 @@
             <th style="width:96px">功率</th>
             <th style="width:80px">带宽</th>
             <th style="width:100px">扫描列表</th>
-            <th style="width:80px">调制</th>
-            <th style="width:40px"></th>
+            <th style="width:96px">调制</th>
+            <th style="width:104px">位置 / 更多</th>
           </tr>
         </thead>
         <tbody id="channelRows"></tbody>
@@ -186,6 +205,20 @@
         <dt>3. 先“读取电台”，再改，最后“写回改动”</dt>
         <dd>只有被修改过的信道会被写入，没动过的字节不会碰。</dd>
 
+        <dt>3b. 调整信道顺序</dt>
+        <dd>
+          电台是按信道号（槽位）扫描和切换的，所以“顺序”就是每条信道待在哪个信道号。<br>
+          • <b>拖动</b>：抓住左边信道号前的 <span class="grip">⠿</span> 拖到目标行，
+          上半格＝放在它前面，下半格＝放在它后面。<br>
+          • <b>一行一行挪</b>：行尾的 <code>↑</code> <code>↓</code> 和相邻信道交换位置。<br>
+          • <b>一步到位</b>：展开 <code>▸</code>，里面有“移到最前 / 移到最后 / 移到信道号…”。<br>
+          • <b>整批排序</b>：工具栏的“排序”可以按频率（低→高 / 高→低）或名称重排。<br>
+          拖动和排序都只作用于<b>当前显示的那些行</b>：勾上“显示全部 1024 条”时是整个信道表，
+          用搜索过滤时只有过滤出来的行参与重排，其余信道原地不动。<br>
+          顺序改动只在点“写回改动”之后才进电台；被挪动的信道会被重写一遍，
+          所以大范围调整前先“导出 JSON”备份。
+        </dd>
+
         <dt>4. 写入后点“重启电台”让新信道生效</dt>
         <dd>电台不会自动重读信道表，重启最稳妥。</dd>
       </dl>
@@ -195,11 +228,13 @@
       <h3>注意事项</h3>
       <dl class="help">
         <dt>务必先备份</dt>
-        <dd>“读取电台”之后用“导出 JSON”存一份，出问题可以对照恢复。</dd>
+        <dd>“读取电台”之后用“导出 JSON”存一份，出问题可以对照恢复。
+            导出的是<b>编辑区当前的内容</b>（含还没写回电台的改动和刚调好的顺序），
+            每条都带信道号，所以导入回来顺序也一起恢复。</dd>
 
         <dt>名称编码</dt>
         <dd>信道名是 UTF-8，占 15 字节（一个汉字 3 字节）。工具会按字符边界截断，绝不会写入半个汉字。
-            中文名也可以直接在电台上用拼音输入。</dd>
+            中文名在这里用系统输入法直接输入即可；电台上只能改（删字、把汉字换成字母），不能新增汉字。</dd>
 
         <dt>多启动（Multiboot）</dt>
         <dd>写入的是“当前生效的那个配置库”。如果你用多启动切换过配置库，写之前先确认电台当前用的是哪一个。</dd>
@@ -244,14 +279,13 @@ const T = WebFlash.tables;
 const state = {
   transport: null,
   radio: null,
-  memory: null,
-  views: [],          // 原始信道数据（读回来的）
-  edits: new Map(),   // 下标 -> {record, attrs, name, changed:{...}} 或 {clear:true}
-  added: new Set(),   // 新增（还没有原始数据）的信道下标
+  table: null,        // WebFlash.SlotTable：电台快照 + 编辑区的期望内容
   fontBlob: null,
   fontOffset: 0,      // 字库已确认写入的字节数（失败后可从这里续传）
   busy: false
 };
+
+const MAX_CHANNELS = T.mrChannelsMax;
 
 const $ = (id) => document.getElementById(id);
 
@@ -293,25 +327,26 @@ async function guard(fn) {
 
 function connected() { return state.radio !== null; }
 
+/* 编辑区是否已经有数据（读过电台，或者导入过 JSON）。顺序调整和编辑只依赖它，
+   所以没接电台也能先把列表整理好。 */
+function hasTable() { return state.table !== null; }
+
 function updateButtons() {
   const on = connected() && !state.busy;
+  const table = hasTable() && !state.busy;
+  const changed = state.table ? state.table.changedCount() : 0;
+
   $("btnRead").disabled = !on;
-  $("btnAdd").disabled = !on || !state.memory;
-  $("btnExport").disabled = !state.memory;
+  $("btnAdd").disabled = !table;
+  $("btnSort").disabled = !table;
+  $("selSort").disabled = !table;
+  $("btnExport").disabled = !hasTable();
   $("btnReset").disabled = !on;
   $("btnFontInfo").disabled = !on;
   $("btnFontWrite").disabled = !on || !state.fontBlob;
-  $("btnWrite").disabled = !on || state.edits.size === 0;
-  $("txtChanged").textContent = "(" + countChanged() + ")";
+  $("btnWrite").disabled = !on || changed === 0;
+  $("txtChanged").textContent = "(" + changed + ")";
   $("btnConnect").textContent = connected() ? "断开" : "连接电台";
-}
-
-function countChanged() {
-  let n = 0;
-  for (const edit of state.edits.values()) {
-    if (edit.clear || edit.changed.record || edit.changed.attrs || edit.changed.name) n++;
-  }
-  return n;
 }
 
 /* ------------------------------------------------------------- 连接与读取 */
@@ -321,10 +356,7 @@ async function connect() {
     await state.radio.close();
     state.radio = null;
     state.transport = null;
-    state.memory = null;
-    state.views = [];
-    state.edits.clear();
-    state.added.clear();
+    state.table = null;
     render();
     $("txtDevice").textContent = "未连接";
     setStatus("已断开");
@@ -351,23 +383,17 @@ async function connect() {
 
 async function readAll() {
   log("开始读取信道…");
-  state.memory = await WebFlash.readChannelMemory(state.radio, {
+  const memory = await WebFlash.readChannelMemory(state.radio, {
     onProgress: (done, total, label) => setProgress(done, total, "读取 " + label)
   });
 
-  state.views = [];
-  for (let i = 0; i < T.mrChannelsMax; i++) {
-    state.views.push(WebFlash.channelToView(state.memory, i));
-  }
+  state.table = new WebFlash.SlotTable(memory);
 
-  state.edits.clear();
-  state.added.clear();
-
-  const used = state.views.filter((v) => v.used).length;
+  const used = state.table.usedCount();
   log("读取完成：1024 条中 " + used + " 条已编程", "ok");
   setStatus("读取完成");
-  $("txtStats").textContent = "已编程 " + used + " 条";
   render();
+  updateButtons();
 }
 
 /* ---------------------------------------------------------------- 渲染 */
@@ -449,7 +475,13 @@ function buildRow(index, view) {
   };
 
   const idx = cell("idx");
-  idx.textContent = String(index + 1).padStart(4, "0");
+  const grip = document.createElement("span");
+  grip.className = "grip";
+  grip.textContent = "⠿";
+  grip.title = "拖动这一行来调整顺序";
+  grip.draggable = true;
+  idx.appendChild(grip);
+  idx.appendChild(document.createTextNode(String(index + 1).padStart(4, "0")));
 
   const name = cell("col-name");
   const nameInput = document.createElement("input");
@@ -522,11 +554,23 @@ function buildRow(index, view) {
   });
   mod.appendChild(modSelect);
 
-  const last = cell();
+  const last = cell("ops");
   const toggle = document.createElement("button");
   toggle.textContent = "▸";
-  toggle.title = "更多选项 / 清空信道";
+  toggle.title = "更多选项 / 调整顺序 / 清空信道";
   last.appendChild(toggle);
+
+  const up = document.createElement("button");
+  up.textContent = "↑";
+  up.title = "和上一个信道交换位置";
+  up.addEventListener("click", () => moveRow(index, -1));
+  last.appendChild(up);
+
+  const down = document.createElement("button");
+  down.textContent = "↓";
+  down.title = "和下一个信道交换位置";
+  down.addEventListener("click", () => moveRow(index, 1));
+  last.appendChild(down);
 
   /* ---- 详情行 ---- */
   const details = document.createElement("tr");
@@ -598,14 +642,31 @@ function buildRow(index, view) {
   bandSelect.addEventListener("change", () => { bandSelect.dataset.touched = "1"; });
   grid.appendChild(bandWrap);
 
+  const posWrap = document.createElement("div");
+  posWrap.className = "pos-group";
+  posWrap.appendChild(document.createTextNode("位置"));
+
+  const posButton = (text, title, handler) => {
+    const button = document.createElement("button");
+    button.textContent = text;
+    button.title = title;
+    button.addEventListener("click", handler);
+    posWrap.appendChild(button);
+  };
+
+  posButton("移到最前", "把这条信道放到列表最前面", () => moveRow(index, "first"));
+  posButton("移到最后", "把这条信道放到列表最后面", () => moveRow(index, "last"));
+  posButton("移到信道号…", "指定一个信道号，这条信道搬过去，中间的信道依次让位",
+            () => moveToChannelNumber(index));
+  grid.appendChild(posWrap);
+
   const clear = document.createElement("button");
   clear.className = "danger";
   clear.textContent = "清空此信道";
   clear.addEventListener("click", () => {
     const index2 = Number(tr.dataset.index);
     if (!confirm("确定清空信道 " + (index2 + 1) + "？")) return;
-    state.edits.set(index2, { clear: true, changed: { record: true, attrs: true, name: true } });
-    state.added.delete(index2);
+    state.table.clear(index2);
     updateRowState(index2);
     updateButtons();
   });
@@ -632,7 +693,7 @@ function buildRow(index, view) {
     freqInput.classList.remove("invalid");
 
     /* 新信道：把频段（影响发射功率校准）跟着频率自动填好，用户手动改过就不再覆盖 */
-    if (state.added.has(index2) && result.record.rxFrequency > 0) {
+    if (!state.table.originalUsed(index2) && result.record.rxFrequency > 0) {
       const bandSelect = details.querySelector('[data-field="band"]');
 
       if (bandSelect && !bandSelect.dataset.touched) {
@@ -645,16 +706,12 @@ function buildRow(index, view) {
       }
     }
 
-    const original = state.added.has(index2) ? null : state.views[index2];
-    const changed = compareToOriginal(original, result);
-
-    if (!changed.record && !changed.attrs && !changed.name) {
-      state.edits.delete(index2);
-    } else {
-      state.edits.set(index2, {
-        record: result.record, attrs: result.attrs, name: result.name, changed: changed
-      });
-    }
+    state.table.set(index2, {
+      pending: !WebFlash.isChannelUsed(result.record),
+      name: result.name,
+      record: result.record,
+      attrs: result.attrs
+    });
 
     updateRowState(index2);
     updateButtons();
@@ -665,39 +722,11 @@ function buildRow(index, view) {
   details.addEventListener("input", onEdit);
   details.addEventListener("change", onEdit);
 
+  attachDragSource(grip, tr, index);
+  attachDropTarget(tr, index);
+  attachDropTarget(details, index);
+
   return [tr, details];
-}
-
-function compareToOriginal(original, result) {
-  if (!original) {
-    return { record: true, attrs: true, name: true };
-  }
-
-  const sameRecord =
-    result.record.rxFrequency === original.record.rxFrequency &&
-    result.record.txOffsetFrequency === original.record.txOffsetFrequency &&
-    result.record.rxCode === original.record.rxCode &&
-    result.record.txCode === original.record.txCode &&
-    result.record.rxCodeType === original.record.rxCodeType &&
-    result.record.txCodeType === original.record.txCodeType &&
-    result.record.txOffsetDirection === original.record.txOffsetDirection &&
-    result.record.modulation === original.record.modulation &&
-    result.record.reverse === original.record.reverse &&
-    result.record.channelBandwidth === original.record.channelBandwidth &&
-    result.record.outputPower === original.record.outputPower &&
-    result.record.busyChannelLock === original.record.busyChannelLock &&
-    result.record.txLock === original.record.txLock &&
-    result.record.dtmfDecodingEnable === original.record.dtmfDecodingEnable &&
-    result.record.dtmfPttIdTxMode === original.record.dtmfPttIdTxMode &&
-    result.record.stepSetting === original.record.stepSetting;
-
-  const sameAttrs =
-    result.attrs.band === original.attrs.band &&
-    result.attrs.compander === original.attrs.compander &&
-    result.attrs.exclude === original.attrs.exclude &&
-    result.attrs.scanList === original.attrs.scanList;
-
-  return { record: !sameRecord, attrs: !sameAttrs, name: result.name !== original.name };
 }
 
 /* 从一行（含详情行）读出完整的新状态。频率非法时返回 error。 */
@@ -707,13 +736,12 @@ function readRow(tr, details, index) {
   const bool = (name) => field(name).checked ? 1 : 0;
   const number = (name) => Number(field(name).value);
 
-  const original = state.added.has(index) || !state.views[index]
-    ? null
-    : state.views[index].record;
+  /* 频率留空表示“不改”：沿用这一格里现在的值（新信道是 0） */
+  const current = state.table.content(index).record;
+  const fallback = (current.rxFrequency === 0xFFFFFFFF) ? 0 : current.rxFrequency;
 
   const rxText = field("rxFrequency").value.trim();
-  const rxFrequency = rxText === "" ? (original ? original.rxFrequency : 0)
-                                    : WebFlash.parseFrequency(rxText);
+  const rxFrequency = rxText === "" ? fallback : WebFlash.parseFrequency(rxText);
 
   if (rxFrequency === null) {
     return { error: "接收频率格式无法识别" };
@@ -773,28 +801,26 @@ function readRow(tr, details, index) {
 }
 
 function updateRowState(index) {
-  const edit = state.edits.get(index);
+  const modified = state.table ? state.table.changed(index) : false;
   document.querySelectorAll('tr[data-index="' + index + '"]').forEach((tr) => {
     if (tr.dataset.details) return;
-    const modified = edit && (edit.clear || edit.changed.record || edit.changed.attrs || edit.changed.name);
-    tr.classList.toggle("changed", !!modified);
+    tr.classList.toggle("changed", modified);
   });
 }
 
+/* 当前显示的行，按显示顺序（拖拽和上下移都只在这个列表里生效）。 */
 function visibleIndices() {
   const search = $("inpSearch").value.trim().toLowerCase();
   const showAll = $("chkAll").checked;
   const indices = [];
 
-  for (let i = 0; i < T.mrChannelsMax; i++) {
-    const view = state.views[i];
-    const isAdded = state.added.has(i);
-
-    if (!showAll && !view.used && !isAdded) continue;
+  for (let i = 0; i < MAX_CHANNELS; i++) {
+    if (!showAll && !state.table.listable(i)) continue;
 
     if (search !== "") {
-      const name = view.name.toLowerCase();
-      const freq = WebFlash.formatFrequency(view.record.rxFrequency);
+      const content = state.table.content(i);
+      const name = content.name.toLowerCase();
+      const freq = WebFlash.formatFrequency(content.record.rxFrequency);
       const index = String(i + 1);
 
       if (!name.includes(search) && !freq.includes(search) && !index.includes(search)) continue;
@@ -810,28 +836,23 @@ function render() {
   const tbody = $("channelRows");
   tbody.textContent = "";
 
-  if (!state.memory && state.added.size === 0) {
+  if (!state.table) {
+    $("txtStats").textContent = "";
     return;
   }
 
   const fragment = document.createDocumentFragment();
 
   for (const index of visibleIndices()) {
-    const view = state.added.has(index)
-      ? {
-          index: index, used: false,
-          name: "",
-          record: {
-            rxFrequency: 0, txOffsetFrequency: 0, rxCode: 0, txCode: 0,
-            rxCodeType: 0, txCodeType: 0, txOffsetDirection: 0, modulation: 0,
-            outputPower: 7, channelBandwidth: 0, txLock: 0, busyChannelLock: 0,
-            reverse: 0, dtmfDecodingEnable: 0, dtmfPttIdTxMode: 0, stepSetting: 5
-          },
-          attrs: { band: 5, compander: 0, exclude: 0, scanList: 0 }
-        }
-      : state.views[index];
+    const content = state.table.content(index);
 
-    const rows = buildRow(index, view);
+    const rows = buildRow(index, {
+      index: index,
+      used: state.table.used(index),
+      name: content.name,
+      record: content.record,
+      attrs: content.attrs
+    });
     fragment.appendChild(rows[0]);
     fragment.appendChild(rows[1]);
     updateRowState(index);
@@ -839,43 +860,214 @@ function render() {
 
   tbody.appendChild(fragment);
 
-  const used = state.views.filter((v) => v.used).length;
-  $("txtStats").textContent = "已编程 " + used + " 条 / 共 " + T.mrChannelsMax +
+  const used = state.table.usedCount();
+  $("txtStats").textContent = "已编程 " + used + " 条 / 共 " + MAX_CHANNELS +
                               " 条，显示 " + tbody.querySelectorAll("tr:not([data-details])").length + " 行";
+}
+
+/* ---------------------------------------------------------- 调整信道顺序 */
+
+/* 拖拽中：源信道号，以及当前悬停到的目标行。 */
+let dragFrom = null;
+let dropTarget = null;
+
+function clearDropMarks() {
+  document.querySelectorAll("tr.drop-above, tr.drop-below").forEach((tr) => {
+    tr.classList.remove("drop-above", "drop-below");
+  });
+  dropTarget = null;
+}
+
+function attachDragSource(grip, tr, index) {
+  grip.addEventListener("dragstart", (event) => {
+    dragFrom = index;
+    tr.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+
+    /* 拖起来的是整行，不是那个小图标 */
+    if (event.dataTransfer.setDragImage) {
+      event.dataTransfer.setDragImage(tr, 20, 10);
+    }
+  });
+
+  grip.addEventListener("dragend", () => {
+    tr.classList.remove("dragging");
+    clearDropMarks();
+    dragFrom = null;
+  });
+}
+
+function attachDropTarget(element, index) {
+  element.addEventListener("dragover", (event) => {
+    if (dragFrom === null) return;
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+
+    const box = element.getBoundingClientRect();
+    const after = event.clientY > box.top + box.height / 2;
+
+    clearDropMarks();
+    element.classList.add(after ? "drop-below" : "drop-above");
+    dropTarget = { index: index, after: after };
+  });
+
+  element.addEventListener("dragleave", () => {
+    element.classList.remove("drop-above", "drop-below");
+  });
+
+  element.addEventListener("drop", (event) => {
+    event.preventDefault();
+
+    const from = dragFrom;
+    const target = dropTarget || { index: index, after: false };
+
+    clearDropMarks();
+    dragFrom = null;
+
+    if (from === null) return;      // 不是从本工具里拖来的
+
+    moveTo(from, target.index, target.after);
+  });
+}
+
+/* 把 from 号信道挪到 to 号信道的位置（after 为真时放到它后面）。
+   只在当前显示的行之间重排：被搜索或“显示全部”藏起来的信道原地不动。 */
+function moveTo(from, to, after) {
+  if (from === to) return;
+
+  const list = visibleIndices();
+  const plan = state.table.reorder(list, from, to, after);
+
+  finishReorder(plan, from);
+}
+
+/* ↑ / ↓ 一格，或者 first / last 直接到两端。 */
+function moveRow(index, direction) {
+  const list = visibleIndices();
+  const at = list.indexOf(index);
+
+  if (at < 0) return;
+
+  let target = null;
+  let after = false;
+
+  if (direction === "first") {
+    target = list[0];
+  } else if (direction === "last") {
+    target = list[list.length - 1];
+    after = true;
+  } else {
+    const next = at + direction;
+
+    if (next < 0 || next >= list.length) {
+      setStatus(direction < 0 ? "已经是第一个了" : "已经是最后一个了");
+      return;
+    }
+
+    target = list[next];
+    after = direction > 0;
+  }
+
+  finishReorder(state.table.reorder(list, index, target, after), index);
+}
+
+/* 移到指定信道号：目标被隐藏时按“物理位置”重排，中间的信道依次让位。 */
+function moveToChannelNumber(index) {
+  const answer = prompt("把信道 " + (index + 1) + " 移到第几个信道号？（1 - " +
+                        MAX_CHANNELS + "）", String(index + 1));
+
+  if (answer === null) return;
+
+  const slot = Number(String(answer).trim()) - 1;
+
+  if (!(slot >= 0 && slot < MAX_CHANNELS)) {
+    log("信道号要在 1 - " + MAX_CHANNELS + " 之间", "err");
+    return;
+  }
+
+  if (slot === index) return;
+
+  const list = visibleIndices();
+  const plan = list.includes(slot)
+    ? state.table.reorder(list, index, slot, slot > index)
+    : state.table.reorder(Array.from({ length: MAX_CHANNELS }, (_, i) => i), index, slot, slot > index);
+
+  finishReorder(plan, index);
+}
+
+/* 重排完成后刷新表格，并把落脚点高亮一下。from 为 null 时（整表排序）不高亮。 */
+function finishReorder(plan, from) {
+  if (!plan || plan.length === 0) {
+    setStatus("顺序没有变化");
+    return;
+  }
+
+  const landed = (from === null || from === undefined) ? null : WebFlash.landingSlot(plan, from);
+
+  render();
+  updateButtons();
+
+  if (landed !== null) {
+    const row = document.querySelector('tr[data-index="' + landed + '"]');
+
+    if (row) {
+      row.classList.add("moved");
+      row.scrollIntoView({ block: "nearest" });
+      setTimeout(() => row.classList.remove("moved"), 1500);
+    }
+  }
+
+  setStatus((landed === null
+    ? "顺序已重排"
+    : "信道 " + (from + 1) + " 现在在第 " + (landed + 1) + " 位") +
+    "；改动 " + state.table.changedCount() + " 条，点“写回改动”才写入电台");
+}
+
+/* 按频率或名称重排当前显示的信道。 */
+function sortView() {
+  const key = $("selSort").value;
+  const list = visibleIndices();
+
+  if (list.length < 2) {
+    setStatus("没有需要排序的信道");
+    return;
+  }
+
+  const frequency = (i) => state.table.content(i).record.rxFrequency;
+  const name = (i) => state.table.content(i).name;
+
+  const order = list.slice().sort((a, b) => {
+    if (key === "name") {
+      const diff = name(a).localeCompare(name(b), "zh-Hans", { numeric: true });
+
+      if (diff !== 0) return diff;
+    } else {
+      const diff = frequency(a) - frequency(b);
+
+      if (diff !== 0) return key === "freq-desc" ? -diff : diff;
+    }
+
+    /* 频率或名称相同：保持原来的先后，排序才是稳定的、可预期的 */
+    return a - b;
+  });
+
+  finishReorder(state.table.permute(list, order), null);
 }
 
 /* ------------------------------------------------------------- 写回改动 */
 
 async function writeChanges() {
-  const changes = [];
-
-  for (const [index, edit] of state.edits) {
-    if (edit.clear) {
-      changes.push({ index: index, clear: true });
-      continue;
-    }
-
-    if (!edit.changed.record && !edit.changed.attrs && !edit.changed.name) continue;
-
-    if (!edit.record || !edit.record.rxFrequency) {
-      throw new Error("信道 " + (index + 1) + " 还没有填写接收频率");
-    }
-
-    const change = { index: index };
-
-    if (edit.changed.record) change.record = WebFlash.encodeRecord(edit.record);
-    if (edit.changed.attrs) change.attrs = WebFlash.encodeAttributes(edit.attrs);
-    if (edit.changed.name) change.name = WebFlash.encodeName(edit.name);
-
-    changes.push(change);
-  }
+  const changes = state.table.changes();
 
   if (changes.length === 0) {
     log("没有需要写入的改动");
     return;
   }
 
-  if (!confirm("将写入 " + changes.length + " 条信道到电台，继续？")) return;
+  if (!confirm("将写入 " + changes.length + " 条信道到电台，继续？\n" +
+               "（调整顺序会重写被挪动到的那些信道；没有备份的话建议先“导出 JSON”）")) return;
 
   log("写入 " + changes.length + " 条信道…");
   await WebFlash.writeChannelChanges(state.radio, changes, {
@@ -889,35 +1081,9 @@ async function writeChanges() {
 
 /* -------------------------------------------------------------- JSON 备份 */
 
+/* 导出的是编辑区当前的内容（包括还没写回电台的改动和刚才调整过的顺序）。 */
 function exportJson() {
-  const channels = [];
-
-  for (const view of state.views) {
-    if (!view.used) continue;
-    channels.push({
-      index: view.index,
-      name: view.name,
-      rxFrequency: view.record.rxFrequency,
-      txOffsetFrequency: view.record.txOffsetFrequency,
-      txOffsetDirection: view.record.txOffsetDirection,
-      rxCode: view.record.rxCode, txCode: view.record.txCode,
-      rxCodeType: view.record.rxCodeType, txCodeType: view.record.txCodeType,
-      modulation: view.record.modulation,
-      outputPower: view.record.outputPower,
-      channelBandwidth: view.record.channelBandwidth,
-      txLock: view.record.txLock,
-      busyChannelLock: view.record.busyChannelLock,
-      reverse: view.record.reverse,
-      dtmfDecodingEnable: view.record.dtmfDecodingEnable,
-      dtmfPttIdTxMode: view.record.dtmfPttIdTxMode,
-      stepSetting: view.record.stepSetting,
-      band: view.attrs.band,
-      compander: view.attrs.compander,
-      exclude: view.attrs.exclude,
-      scanList: view.attrs.scanList
-    });
-  }
-
+  const channels = state.table.json();
   const blob = new Blob([JSON.stringify({ tool: "webflash", version: 1, channels: channels }, null, 2)],
                         { type: "application/json" });
   const link = document.createElement("a");
@@ -938,32 +1104,13 @@ async function importJson(file) {
 
   if (!confirm("导入 " + parsed.channels.length + " 条信道到编辑区（不会立即写入电台）？")) return;
 
-  for (const entry of parsed.channels) {
-    const index = Number(entry.index);
-
-    if (!(index >= 0 && index < T.mrChannelsMax)) continue;
-
-    state.edits.set(index, {
-      record: {
-        rxFrequency: entry.rxFrequency, txOffsetFrequency: entry.txOffsetFrequency,
-        rxCode: entry.rxCode, txCode: entry.txCode,
-        rxCodeType: entry.rxCodeType, txCodeType: entry.txCodeType,
-        txOffsetDirection: entry.txOffsetDirection, modulation: entry.modulation,
-        outputPower: entry.outputPower, channelBandwidth: entry.channelBandwidth,
-        txLock: entry.txLock, busyChannelLock: entry.busyChannelLock,
-        reverse: entry.reverse, dtmfDecodingEnable: entry.dtmfDecodingEnable,
-        dtmfPttIdTxMode: entry.dtmfPttIdTxMode, stepSetting: entry.stepSetting
-      },
-      attrs: {
-        band: entry.band, compander: entry.compander,
-        exclude: entry.exclude, scanList: entry.scanList
-      },
-      name: entry.name,
-      changed: { record: true, attrs: true, name: true }
-    });
+  if (!state.table) {
+    state.table = new WebFlash.SlotTable(null);   // 没读过电台也能先导入、整理
   }
 
-  log("已导入 " + parsed.channels.length + " 条，请检查后点“写回改动”", "ok");
+  const loaded = state.table.load(parsed.channels);
+
+  log("已导入 " + loaded + " 条（按 JSON 里的信道号落位），请检查后点“写回改动”", "ok");
   render();
   updateButtons();
 }
@@ -1078,25 +1225,22 @@ $("btnReset").addEventListener("click", () => guard(async () => {
 }));
 
 $("btnAdd").addEventListener("click", () => {
-  for (let i = 0; i < T.mrChannelsMax; i++) {
-    if (!state.views[i].used && !state.added.has(i)) {
-      state.added.add(i);
-      state.edits.set(i, {
-        record: null, attrs: null, name: "",
-        changed: { record: true, attrs: true, name: true }
-      });
-      render();
-      setStatus("新增信道 " + (i + 1) + "，填好频率后点“写回改动”");
-      updateButtons();
-      return;
-    }
+  const free = state.table.firstFree();
+
+  if (free < 0) {
+    log("没有空信道了", "err");
+    return;
   }
 
-  log("没有空信道了", "err");
+  state.table.add(free);
+  render();
+  setStatus("新增信道 " + (free + 1) + "，填好频率后点“写回改动”");
+  updateButtons();
 });
 
 $("inpSearch").addEventListener("input", render);
 $("chkAll").addEventListener("change", render);
+$("btnSort").addEventListener("click", sortView);
 $("btnExport").addEventListener("click", exportJson);
 $("inpImport").addEventListener("change", (event) => {
   const file = event.target.files[0];

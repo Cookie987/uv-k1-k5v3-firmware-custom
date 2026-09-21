@@ -942,6 +942,417 @@ globalThis.WebFlash = (function () {
         await radio.writeEeprom(groupOffset, group);
     }
 
+    // --------------------------------------------------------- channel table
+
+    /* Reordering. `slots` is the order the user is looking at - normally the
+     * programmed channels in slot order, but any subset works. The channel at
+     * `from` is taken out and put back next to `to`, before it or after it when
+     * `after` is set, and the slots in between shift by one.
+     *
+     * The result is a list of {from, to} pairs meaning "the content of `from`
+     * goes to `to`". Slots outside `slots` are never mentioned, so reordering a
+     * filtered view only rearranges what it shows and leaves every hidden channel
+     * where it is. Returns null when either slot is not in the list. */
+    function planReorder(slots, from, to, after) {
+        var at = slots.indexOf(from);
+        var target = slots.indexOf(to);
+
+        if (at < 0 || target < 0) {
+            return null;
+        }
+
+        if (from === to) {
+            return [];
+        }
+
+        var rest = slots.slice(0, at).concat(slots.slice(at + 1));
+        var insert = rest.indexOf(to) + (after ? 1 : 0);
+
+        return planPermutation(slots, rest.slice(0, insert).concat([from], rest.slice(insert)));
+    }
+
+    /* The same, from an order the caller worked out itself (sorting, for
+     * example): `order` has to be a permutation of `slots`. */
+    function planPermutation(slots, order) {
+        var seen = {};
+        var plan = [];
+
+        if (order.length !== slots.length) {
+            throw new Error("新顺序的长度与信道数量不一致");
+        }
+
+        for (var i = 0; i < order.length; i++) {
+            if (slots.indexOf(order[i]) < 0 || seen[order[i]]) {
+                throw new Error("新顺序里有重复或不属于当前列表的信道");
+            }
+
+            seen[order[i]] = true;
+        }
+
+        for (var j = 0; j < slots.length; j++) {
+            if (slots[j] !== order[j]) {
+                plan.push({ from: order[j], to: slots[j] });
+            }
+        }
+
+        return plan;
+    }
+
+    /* Which slot the content that started at `from` ends up in. */
+    function landingSlot(plan, from) {
+        for (var i = 0; i < (plan ? plan.length : 0); i++) {
+            if (plan[i].from === from) {
+                return plan[i].to;
+            }
+        }
+
+        return from;
+    }
+
+    // ---------------------------------------------------------- slot contents
+
+    function copyObject(source) {
+        var out = {};
+        var key;
+
+        for (key in source) {
+            if (Object.prototype.hasOwnProperty.call(source, key)) {
+                out[key] = source[key];
+            }
+        }
+
+        return out;
+    }
+
+    function cloneContent(content) {
+        return {
+            pending: !!content.pending,
+            name: content.name || "",
+            record: copyObject(content.record),
+            attrs: copyObject(content.attrs)
+        };
+    }
+
+    /* A slot with nothing in it. band 7 is what the firmware itself stores for a
+     * deleted channel, so an empty slot reads as "no channel" everywhere. */
+    function emptyContent() {
+        return {
+            pending: false,
+            name: "",
+            record: {
+                rxFrequency: 0, txOffsetFrequency: 0, rxCode: 0, txCode: 0,
+                rxCodeType: 0, txCodeType: 0, txOffsetDirection: 0, modulation: 0,
+                outputPower: 7, channelBandwidth: 0, txLock: 0, busyChannelLock: 0,
+                reverse: 0, dtmfDecodingEnable: 0, dtmfPttIdTxMode: 0, stepSetting: 5,
+                scramblingOrReserved: 0
+            },
+            attrs: { raw: 0, band: 7, compander: 0, exclude: 0, scanList: 0 }
+        };
+    }
+
+    /* What the page starts a brand new channel from: HIGH power and a 12.5 kHz
+     * step, the same defaults the radio puts on a fresh channel. */
+    function newContent() {
+        var content = emptyContent();
+
+        content.pending = true;
+        content.attrs.band = 5;
+
+        return content;
+    }
+
+    /* The fields the record encoder actually writes. Byte 15 (scrambling) is
+     * always zeroed by encodeRecord(), so it is deliberately not compared: a
+     * channel is "changed" only when something that would be stored differs. */
+    var recordFields = [
+        "rxFrequency", "txOffsetFrequency", "rxCode", "txCode", "rxCodeType", "txCodeType",
+        "txOffsetDirection", "modulation", "outputPower", "channelBandwidth", "txLock",
+        "busyChannelLock", "reverse", "dtmfDecodingEnable", "dtmfPttIdTxMode", "stepSetting"
+    ];
+
+    function sameRecord(a, b) {
+        for (var i = 0; i < recordFields.length; i++) {
+            if ((a[recordFields[i]] || 0) !== (b[recordFields[i]] || 0)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function sameBytes(a, b) {
+        if (a.length !== b.length) {
+            return false;
+        }
+
+        for (var i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function sameAttrs(a, b) {
+        return sameBytes(encodeAttributes(a), encodeAttributes(b));
+    }
+
+    /* The whole channel table as the page edits it: a desired state per slot
+     * ("slots") next to the untouched snapshot the radio gave us ("original").
+     *
+     * Everything the page shows and everything that is written is derived from
+     * those two, which is what makes reordering trivial: a move only swaps
+     * content between slots, and changes() then reports exactly the slots whose
+     * stored bytes would differ. Empty slots are equal to each other no matter
+     * what the radio left in them, so shuffling them around costs no writes. */
+    function SlotTable(memory) {
+        this.original = [];
+        this.slots = [];
+
+        for (var i = 0; i < T.mrChannelsMax; i++) {
+            var view = (memory ? channelToView(memory, i) : null);
+
+            this.original.push(view
+                ? { pending: false, name: view.name, record: view.record, attrs: view.attrs }
+                : emptyContent());
+        }
+
+        for (var j = 0; j < this.original.length; j++) {
+            this.slots.push(cloneContent(this.original[j]));
+        }
+    }
+
+    SlotTable.prototype = {
+        count: function () { return this.slots.length; },
+
+        content: function (index) { return this.slots[index]; },
+        originalContent: function (index) { return this.original[index]; },
+
+        set: function (index, content) { this.slots[index] = cloneContent(content); },
+        clear: function (index) { this.slots[index] = emptyContent(); },
+
+        /* A slot the radio knows nothing about yet: listed while the user fills it
+         * in, never written while it has no frequency. */
+        add: function (index) {
+            this.slots[index] = newContent();
+
+            return this.slots[index];
+        },
+
+        used: function (index) { return isChannelUsed(this.slots[index].record); },
+        originalUsed: function (index) { return isChannelUsed(this.original[index].record); },
+        pending: function (index) { return !!this.slots[index].pending; },
+
+        listable: function (index) { return this.used(index) || this.pending(index); },
+
+        firstFree: function () {
+            for (var i = 0; i < this.slots.length; i++) {
+                if (!this.used(i)) {
+                    return i;
+                }
+            }
+
+            return -1;
+        },
+
+        usedCount: function () {
+            var n = 0;
+
+            for (var i = 0; i < this.slots.length; i++) {
+                if (this.used(i)) {
+                    n++;
+                }
+            }
+
+            return n;
+        },
+
+        /* True when this slot would be written. Cheap on purpose: the page calls
+         * it for every row on every keystroke. */
+        changed: function (index) {
+            var want = this.slots[index];
+            var have = this.original[index];
+            var wantUsed = isChannelUsed(want.record);
+
+            if (!wantUsed) {
+                return isChannelUsed(have.record);
+            }
+
+            if (!isChannelUsed(have.record)) {
+                return true;
+            }
+
+            return want.name !== have.name ||
+                   !sameRecord(want.record, have.record) ||
+                   !sameAttrs(want.attrs, have.attrs);
+        },
+
+        changedCount: function () {
+            var n = 0;
+
+            for (var i = 0; i < this.slots.length; i++) {
+                if (this.changed(i)) {
+                    n++;
+                }
+            }
+
+            return n;
+        },
+
+        /* What writeChannelChanges() needs for one slot, or null when the radio
+         * already holds it. */
+        changeFor: function (index) {
+            var want = this.slots[index];
+            var have = this.original[index];
+            var wantUsed = isChannelUsed(want.record);
+            var haveUsed = isChannelUsed(have.record);
+            var change = { index: index };
+
+            if (!wantUsed) {
+                return haveUsed ? { index: index, clear: true } : null;
+            }
+
+            if (!haveUsed || !sameBytes(encodeRecord(want.record), encodeRecord(have.record))) {
+                change.record = encodeRecord(want.record);
+            }
+
+            if (!haveUsed || want.name !== have.name) {
+                change.name = encodeName(want.name);
+            }
+
+            if (!haveUsed || !sameAttrs(want.attrs, have.attrs)) {
+                change.attrs = encodeAttributes(want.attrs);
+            }
+
+            return (change.record || change.name || change.attrs) ? change : null;
+        },
+
+        changes: function () {
+            var out = [];
+
+            for (var i = 0; i < this.slots.length; i++) {
+                var change = this.changeFor(i);
+
+                if (change) {
+                    out.push(change);
+                }
+            }
+
+            return out;
+        },
+
+        /* Move content between slots. Two passes, so that a chain of moves (A->B,
+         * B->C) can never copy content that has already been overwritten. */
+        applyPlan: function (plan) {
+            var moves = [];
+            var i;
+
+            for (i = 0; i < (plan ? plan.length : 0); i++) {
+                moves.push({ to: plan[i].to, content: cloneContent(this.slots[plan[i].from]) });
+            }
+
+            for (i = 0; i < moves.length; i++) {
+                this.slots[moves[i].to] = moves[i].content;
+            }
+
+            return plan;
+        },
+
+        reorder: function (slotList, from, to, after) {
+            return this.applyPlan(planReorder(slotList, from, to, after));
+        },
+
+        permute: function (slotList, order) {
+            return this.applyPlan(planPermutation(slotList, order));
+        },
+
+        /* Backup / restore. Only channels that are actually programmed are
+         * exported; entries carry their slot number, so a reordered list comes
+         * back in the order it was exported. */
+        json: function () {
+            var out = [];
+
+            for (var i = 0; i < this.slots.length; i++) {
+                var content = this.slots[i];
+
+                if (!isChannelUsed(content.record)) {
+                    continue;
+                }
+
+                var record = content.record;
+                var attrs = content.attrs;
+
+                out.push({
+                    index: i,
+                    name: content.name,
+                    rxFrequency: record.rxFrequency,
+                    txOffsetFrequency: record.txOffsetFrequency,
+                    txOffsetDirection: record.txOffsetDirection,
+                    rxCode: record.rxCode, txCode: record.txCode,
+                    rxCodeType: record.rxCodeType, txCodeType: record.txCodeType,
+                    modulation: record.modulation,
+                    outputPower: record.outputPower,
+                    channelBandwidth: record.channelBandwidth,
+                    txLock: record.txLock,
+                    busyChannelLock: record.busyChannelLock,
+                    reverse: record.reverse,
+                    dtmfDecodingEnable: record.dtmfDecodingEnable,
+                    dtmfPttIdTxMode: record.dtmfPttIdTxMode,
+                    stepSetting: record.stepSetting,
+                    band: attrs.band,
+                    compander: attrs.compander,
+                    exclude: attrs.exclude,
+                    scanList: attrs.scanList
+                });
+            }
+
+            return out;
+        },
+
+        load: function (entries) {
+            var loaded = 0;
+
+            for (var i = 0; i < entries.length; i++) {
+                var entry = entries[i];
+                var index = Number(entry.index);
+
+                if (!(index >= 0 && index < this.slots.length)) {
+                    continue;
+                }
+
+                var record = {
+                    rxFrequency: entry.rxFrequency, txOffsetFrequency: entry.txOffsetFrequency,
+                    rxCode: entry.rxCode, txCode: entry.txCode,
+                    rxCodeType: entry.rxCodeType, txCodeType: entry.txCodeType,
+                    txOffsetDirection: entry.txOffsetDirection, modulation: entry.modulation,
+                    outputPower: entry.outputPower, channelBandwidth: entry.channelBandwidth,
+                    txLock: entry.txLock, busyChannelLock: entry.busyChannelLock,
+                    reverse: entry.reverse, dtmfDecodingEnable: entry.dtmfDecodingEnable,
+                    dtmfPttIdTxMode: entry.dtmfPttIdTxMode, stepSetting: entry.stepSetting,
+                    scramblingOrReserved: 0
+                };
+
+                this.slots[index] = {
+                    pending: !isChannelUsed(record),
+                    name: entry.name || "",
+                    record: record,
+                    attrs: {
+                        raw: 0,
+                        band: Number(entry.band) || 0,
+                        compander: Number(entry.compander) || 0,
+                        exclude: Number(entry.exclude) || 0,
+                        scanList: Number(entry.scanList) || 0
+                    }
+                };
+
+                loaded++;
+            }
+
+            return loaded;
+        }
+    };
+
     // --------------------------------------------------------------------- font
 
     /* Same checks upload_cn_font.py and CN_FONT_Init() make: a mismatched blob
@@ -1046,6 +1457,12 @@ globalThis.WebFlash = (function () {
         channelToView: channelToView,
         writeChannelChanges: writeChannelChanges,
         writeAttributes: writeAttributes,
+        planReorder: planReorder,
+        planPermutation: planPermutation,
+        landingSlot: landingSlot,
+        emptyContent: emptyContent,
+        newContent: newContent,
+        SlotTable: SlotTable,
         validateFontBlob: validateFontBlob,
         writeFontBlob: writeFontBlob
     };
