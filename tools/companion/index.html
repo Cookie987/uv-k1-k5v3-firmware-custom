@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UV-K1 / UV-K5 V3 副屏</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1c2230;
+    --line: #2d3646;
+    --text: #e6edf3;
+    --dim: #8b949e;
+    --accent: #58a6ff;
+    --rx: #3fb950;
+    --tx: #f85149;
+    --warn: #d29922;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body { padding: 14px; max-width: 1100px; margin: 0 auto; }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+
+  h1 { font-size: 17px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+
+  .badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--panel2);
+    color: var(--dim);
+    border: 1px solid var(--line);
+  }
+
+  button {
+    font: inherit;
+    font-size: 13px;
+    padding: 8px 14px;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: var(--panel2);
+    color: var(--text);
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+
+  button:hover:not(:disabled) { background: #263041; border-color: #3d4a5e; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: #1f6feb; border-color: #1f6feb; }
+  button.primary:hover:not(:disabled) { background: #2f7ff0; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+
+  .vfo-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .vfo-tag {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 2px 9px;
+    border-radius: 5px;
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    color: var(--dim);
+  }
+
+  .vfo-tag.active {
+    background: rgba(88,166,255,.16);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .vfo-tag.txactive {
+    background: rgba(248,81,73,.16);
+    border-color: var(--tx);
+    color: var(--tx);
+  }
+
+  .mode-tag {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .6px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 5px;
+    background: #24303f;
+    border: 1px solid var(--line);
+    color: var(--dim);
+  }
+
+  .mode-tag.mr {
+    background: rgba(210,153,34,.16);
+    border-color: var(--warn);
+    color: var(--warn);
+  }
+
+  .hold-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 5px;
+    background: #2a2113;
+    border: 1px solid #5a4a20;
+    color: var(--warn);
+    display: none;
+  }
+
+  .freq {
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .freq .unit { font-size: 15px; color: var(--dim); font-weight: 400; margin-left: 5px; }
+
+  .sub {
+    font-size: 12px;
+    color: var(--dim);
+    margin-top: 3px;
+    min-height: 15px;
+    word-break: break-all;
+  }
+
+  .state {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 5px;
+    letter-spacing: .5px;
+  }
+
+  .state.rx { background: rgba(63,185,80,.18); color: var(--rx); }
+  .state.tx { background: rgba(248,81,73,.18); color: var(--tx); }
+  .state.idle { background: var(--panel2); color: var(--dim); }
+
+  .meter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 9px;
+  }
+
+  .meter-label { font-size: 11px; color: var(--dim); width: 34px; }
+
+  .bar {
+    flex: 1;
+    height: 9px;
+    background: #0b0f16;
+    border-radius: 5px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+
+  .bar > i {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, #3fb950, #d29922 72%, #f85149);
+    transition: width .09s linear;
+  }
+
+  .meter-val {
+    font-size: 12px;
+    color: var(--dim);
+    width: 62px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px;
+  }
+
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .stat .k { font-size: 11px; color: var(--dim); margin-bottom: 3px; }
+  .stat .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  #log {
+    background: #0b0f16;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 11px;
+    height: 170px;
+    overflow-y: auto;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--dim);
+  }
+
+  #log .e { color: var(--tx); }
+  #log .w { color: var(--warn); }
+  #log .i { color: var(--accent); }
+  #log .o { color: var(--rx); }
+
+  .controls { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #484f58; display: inline-block; margin-right: 6px;
+    vertical-align: middle;
+  }
+  .dot.on { background: var(--rx); box-shadow: 0 0 7px var(--rx); }
+  .dot.tx { background: var(--tx); box-shadow: 0 0 7px var(--tx); }
+
+  label.inline { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 5px; }
+  select {
+    font: inherit; font-size: 12px; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>副屏</h1>
+  <span class="badge" id="verBadge">未连接</span>
+  <span class="badge"><span class="dot" id="linkDot"></span><span id="linkTxt">离线</span></span>
+</header>
+
+<div class="controls" style="margin-bottom:12px">
+  <button id="btnConnect" class="primary">连接电台</button>
+  <button id="btnDisconnect" disabled>断开</button>
+  <label class="inline">刷新
+    <select id="selRate">
+      <option value="150">150 ms</option>
+      <option value="250" selected>250 ms</option>
+      <option value="500">500 ms</option>
+      <option value="1000">1000 ms</option>
+    </select>
+  </label>
+  <span class="badge" id="rateBadge">—</span>
+</div>
+
+<div class="grid">
+  <div class="card" id="cardA">
+    <div class="vfo-head">
+      <span class="vfo-tag" id="tagA">VFO A</span>
+      <span class="mode-tag" id="modeA">—</span>
+      <span class="state idle" id="stateA">待机</span>
+    </div>
+    <div class="freq"><span id="freqA">--.-----</span><span class="unit">MHz</span></div>
+    <div class="sub" id="subA">&nbsp;</div>
+    <div class="meter-row">
+      <span class="meter-label">RSSI</span>
+      <div class="bar"><i id="barA"></i></div>
+      <span class="meter-val" id="rssiA">—</span>
+      <span class="hold-tag" id="holdA">保持</span>
+    </div>
+  </div>
+
+  <div class="card" id="cardB">
+    <div class="vfo-head">
+      <span class="vfo-tag" id="tagB">VFO B</span>
+      <span class="mode-tag" id="modeB">—</span>
+      <span class="state idle" id="stateB">待机</span>
+    </div>
+    <div class="freq"><span id="freqB">--.-----</span><span class="unit">MHz</span></div>
+    <div class="sub" id="subB">&nbsp;</div>
+    <div class="meter-row">
+      <span class="meter-label">RSSI</span>
+      <div class="bar"><i id="barB"></i></div>
+      <span class="meter-val" id="rssiB">—</span>
+      <span class="hold-tag" id="holdB">保持</span>
+    </div>
+  </div>
+</div>
+
+<div class="stats" style="margin-bottom:12px">
+  <div class="stat"><div class="k">电池电压</div><div class="v" id="stVolt">—</div></div>
+  <div class="stat"><div class="k">电池电流</div><div class="v" id="stCur">—</div></div>
+  <div class="stat"><div class="k">发射功率</div><div class="v" id="stPwr">—</div></div>
+  <div class="stat"><div class="k">静噪</div><div class="v" id="stSql">—</div></div>
+  <div class="stat"><div class="k">调制</div><div class="v" id="stMod">—</div></div>
+  <div class="stat"><div class="k">更新</div><div class="v" id="stRate">—</div></div>
+</div>
+
+<div id="log"></div>
+
+<script>
+"use strict";
+
+/* ============================================================================
+ *  UV-K1 / UV-K5 V3 副屏 —— 只读状态显示
+ *
+ *  与固件 App/app/uart.c 的命令-应答协议对接。所有常量与偏移都取自固件源码，
+ *  改动固件后请对照注释里的文件行号复核。
+ *
+ *  设计要点：
+ *    - 不碰 K5Viewer 流（0xAA55 那套）。只用命令接口，因为 RSSI 只有
+ *      0x0527 才是真·瞬时值，K5Viewer 的 meter 字段是"会话峰值"。
+ *    - 所有命令都会让固件把 gUART_LockK5Viewer 置 20（uart.c:1495），
+ *      所以本工具运行期间电台的屏幕流会被压制 —— 这是固件行为，不是 bug。
+ *    - 0x0514 握手会存下时间戳，0x051B 读 EEPROM 会强制校验它
+ *      （uart.c:410-411），不匹配就静默丢弃。因此必须周期性重新握手。
+ * ========================================================================== */
+
+/* ---------------------------------------------------------------- 协议常量 */
+
+/* App/app/uart.c:179-182 */
+var OBFUSCATION = [
+    0x16, 0x6C, 0x14, 0xE6, 0x2E, 0x91, 0x0D, 0x40,
+    0x21, 0x35, 0xD5, 0x40, 0x13, 0x03, 0xE9, 0x80
+];
+
+/* App/app/uart.c 命令分发表 */
+var CMD = {
+    DEV_INFO:     0x0514,   /* -> 0x0515 */
+    DEV_INFO_RSP: 0x0515,
+    READ_EEPROM:  0x051B,   /* -> 0x051C */
+    READ_EEPROM_RSP: 0x051C,
+    READ_RSSI:    0x0527,   /* -> 0x0528 */
+    READ_RSSI_RSP: 0x0528,
+    READ_ADC:     0x0529,   /* -> 0x052A */
+    READ_ADC_RSP: 0x052A
+};
+
+/* App/app/uart.c:420, REPLY_051B_t.Data[128] */
+var EEPROM_READ_MAX = 128;
+
+/* ------------------------------------------------------------ EEPROM 偏移
+ *
+ * 这些是"扁平 EEPROM 地址空间"里的偏移，由 EEPROM_ReadBuffer() 经
+ * App/driver/eeprom_compat.c 的 ADDR_MAPPINGS 翻译到外部 flash 物理地址。
+ * 主机只使用这个扁平空间即可，不要用物理地址。
+ */
+
+/* 每个 VFO 槽的固定区：App/settings.c:1227
+ *   VFO0 -> 0x009000, VFO1 -> 0x009010
+ * 再加上 (FREQ_CHANNEL - 1024) * 32 的频段步进（radio.c:385）。
+ * FREQ_CHANNEL_FIRST = 1024（App/misc.h:40/59）。
+ */
+var VFO_BASE = [0x009000, 0x009010];
+var FREQ_CHANNEL_FIRST = 1024;
+var VFO_SLOT_STRIDE = 32;
+
+/* VFO 记录内布局（App/settings.c:1242-1266 的写入侧，
+ * App/radio.c:394-470 的读取侧）：
+ *   +0x00  u32  freq_config_RX.Frequency   (Hz)
+ *   +0x04  u32  TX_OFFSET_FREQUENCY
+ *   +0x08  u8   freq_config_RX.Code        (CTCSS/DCS 码)
+ *   +0x09  u8   freq_config_TX.Code
+ *   +0x0A  u8   TX.CodeType<<4 | RX.CodeType
+ *   +0x0B  u8   Modulation<<4 | TX_OFFSET_DIRECTION
+ *   +0x0C  u8   TX_LOCK<<6 | BUSY_LOCK<<5 | OUTPUT_POWER<<2 | BW<<1 | REVERSE
+ *   +0x0E  u8   STEP_SETTING
+ */
+var VFO_OFF_FREQ     = 0x00;
+var VFO_OFF_CODE_RX  = 0x08;
+var VFO_OFF_CODE_TX  = 0x09;
+var VFO_OFF_CODETYPE = 0x0A;
+var VFO_OFF_MOD      = 0x0B;
+var VFO_OFF_FLAGS    = 0x0C;
+var VFO_OFF_STEP     = 0x0E;
+var VFO_RECORD_SIZE  = 16;
+
+/* App/settings.c:213 读的是 0x00A010 处的 8 个 u16：
+ *   [0] ScreenChannel[0] [1] MrChannel[0] [2] FreqChannel[0]
+ *   [3] ScreenChannel[1] [4] MrChannel[1] [5] FreqChannel[1]
+ * 即"每个 VFO 当前显示的信道号"（可能是记忆信道，也可能是频段 VFO）。
+ */
+var SCREEN_CH_BASE = 0x00A010;
+
+/* App/settings.c:296 —— TX_VFO 在 0x00A0A8 + 0x18 + 3。
+ * 这是"用户选中的主 VFO"（0=上/A, 1=下/B）；RX_VFO 只在 RAM 里，
+ * 会被双守候交替、被跨段翻转（settings.h:184-190），无法从 EEPROM 读。
+ */
+var TX_VFO_OFFSET = 0x00A0A8 + 0x18 + 3;
+
+/* App/settings.c:152 —— SQUELCH_LEVEL 在 0x00A000 + 1（0..9）。 */
+var SQUELCH_OFFSET = 0x00A000 + 1;
+
+/* App/settings.c:128 —— dBmCorrTable[7] 在 0x00A0B9，每个频段一个 int8 修正值。
+ * 用于把 0x0527 的原始 RSSI 换算成 dBm（见下方 adcToDbm）。 */
+var DBMCORR_OFFSET = 0x00A0B9;
+var DBMCORR_DEFAULT = [-15, -16, -10, -4, -7, -6, -1];   /* misc.c:153 */
+
+/* 信道号空间（App/misc.h:40,56-63） */
+var MR_CHANNELS_MAX   = 1024;
+var MR_CHANNEL_LAST   = MR_CHANNELS_MAX - 1;
+var NOAA_CHANNEL_FIRST = MR_CHANNELS_MAX + 7;
+var NOAA_CHANNEL_LAST  = MR_CHANNELS_MAX + 16;
+
+/* 记忆信道的频率就在 channel*16 处（App/settings.c:1223, radio.c:382-383） */
+var MR_RECORD_SIZE = 16;
+
+/* App/frequencies.h —— 频段表，用于给"频段 VFO"起个名字。
+ * 顺序必须与 BAND3_137MHz / BAND6_400MHz 所在枚举一致。 */
+var BAND_NAMES = [
+    "50 MHz", "108 MHz", "137 MHz", "174 MHz",
+    "350 MHz", "400 MHz", "470 MHz"
+];
+
+/* ------------------------------------------------------------------ 工具 */
+
+var $ = function (id) { return document.getElementById(id); };
+
+function hex2(b) { return b.toString(16).toUpperCase().padStart(2, "0"); }
+
+function u16le(v) { return [v & 0xFF, (v >> 8) & 0xFF]; }
+
+function u32le(v) {
+    return [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF];
+}
+
+function readU16(b, o) { return b[o] | (b[o + 1] << 8); }
+
+function readU32(b, o) {
+    return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+}
+
+function log(msg, cls) {
+    var el = $("log");
+    var d = document.createElement("div");
+    if (cls) { d.className = cls; }
+    var t = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    d.textContent = "[" + t + "] " + msg;
+    el.appendChild(d);
+    while (el.childElementCount > 300) { el.removeChild(el.firstChild); }
+    el.scrollTop = el.scrollHeight;
+}
+
+/* CRC-16/CCITT-FALSE (poly 0x1021, init 0) —— App/driver/crc.c */
+function crc16(bytes) {
+    var crc = 0;
+    for (var i = 0; i < bytes.length; i++) {
+        crc ^= bytes[i] << 8;
+        for (var bit = 0; bit < 8; bit++) {
+            crc = (crc & 0x8000) ? (((crc << 1) ^ 0x1021) & 0xFFFF) : ((crc << 1) & 0xFFFF);
+        }
+    }
+    return crc;
+}
+
+function obfuscate(bytes) {
+    var out = new Uint8Array(bytes.length);
+    for (var i = 0; i < bytes.length; i++) {
+        out[i] = bytes[i] ^ OBFUSCATION[i % 16];
+    }
+    return out;
+}
+
+/* 组一个命令帧：AB CD | size(u16 LE) | obf(payload+crc16) | DC BA
+ *
+ * size 是载荷长度（id + dataLen + data），不含尾随的 2 字节 CRC ——
+ * 固件 UART_IsCommandAvailable() 把 CRC 读在 Buffer[size]（uart.c:816-823）。
+ * 参考实现：tools/webflash/js/webflash.js:90-116
+ */
+function buildCommand(id, data) {
+    data = data || new Uint8Array(0);
+
+    var payload = new Uint8Array(4 + data.length);
+    payload[0] = id & 0xFF;
+    payload[1] = (id >> 8) & 0xFF;
+    payload[2] = data.length & 0xFF;
+    payload[3] = (data.length >> 8) & 0xFF;
+    payload.set(data, 4);
+
+    var crc = crc16(payload);
+    var body = new Uint8Array(payload.length + 2);
+    body.set(payload, 0);
+    body[payload.length] = crc & 0xFF;
+    body[payload.length + 1] = (crc >> 8) & 0xFF;
+
+    var frame = new Uint8Array(4 + body.length + 2);
+    frame[0] = 0xAB;
+    frame[1] = 0xCD;
+    frame[2] = payload.length & 0xFF;
+    frame[3] = (payload.length >> 8) & 0xFF;
+    frame.set(obfuscate(body), 4);
+    frame[frame.length - 2] = 0xDC;
+    frame[frame.length - 1] = 0xBA;
+
+    return frame;
+}
+
+/* --------------------------------------------------------------- 应答解析 */
+
+function ReplyReader() {
+    this.buffer = new Uint8Array(0);
+}
+
+ReplyReader.prototype.push = function (bytes) {
+    var merged = new Uint8Array(this.buffer.length + bytes.length);
+    merged.set(this.buffer, 0);
+    merged.set(bytes, this.buffer.length);
+    this.buffer = merged;
+
+    if (this.buffer.length > 8192) {
+        this.buffer = this.buffer.slice(this.buffer.length - 2048);
+    }
+
+    var out = [];
+    for (;;) {
+        var r = this.take();
+        if (!r) { break; }
+        out.push(r);
+    }
+    return out;
+};
+
+ReplyReader.prototype.take = function () {
+    var buf = this.buffer;
+    var start = -1;
+
+    for (var i = 0; i + 1 < buf.length; i++) {
+        if (buf[i] === 0xAB && buf[i + 1] === 0xCD) { start = i; break; }
+    }
+
+    if (start < 0) {
+        this.buffer = buf.slice(Math.max(0, buf.length - 1));
+        return null;
+    }
+
+    if (buf.length - start < 4) {
+        this.buffer = buf.slice(start);
+        return null;
+    }
+
+    var size = buf[start + 2] | (buf[start + 3] << 8);
+    var total = 4 + size + 2 + 2;     /* header + body(payload+crc) + pad + footer */
+
+    if (size > 4096) {
+        /* 明显错位：丢掉这个候选头，继续往后找 */
+        this.buffer = buf.slice(start + 2);
+        return null;
+    }
+
+    if (buf.length - start < total) {
+        this.buffer = buf.slice(start);
+        return null;
+    }
+
+    if (buf[start + total - 2] !== 0xDC || buf[start + total - 1] !== 0xBA) {
+        this.buffer = buf.slice(start + 2);
+        return null;
+    }
+
+    /* 载荷（含 CRC 的两字节已在 body 内，这里按 size 截取） */
+    var body = buf.slice(start + 4, start + 4 + size);
+    var plain = new Uint8Array(size);
+    for (var k = 0; k < size; k++) {
+        plain[k] = body[k] ^ OBFUSCATION[k % 16];
+    }
+
+    this.buffer = buf.slice(start + total);
+
+    if (plain.length < 4) { return null; }
+
+    var id = readU16(plain, 0);
+    var len = readU16(plain, 2);
+    var data = plain.slice(4, 4 + len);
+
+    return { id: id, data: data };
+};
+
+/* ------------------------------------------------------------------ 电台 */
+
+function Radio() {
+    this.port = null;
+    this.reader = null;
+    this.writer = null;
+    this.replies = new ReplyReader();
+    this.pending = [];          // 至多一个在途事务；见 request()
+    this.readLoopRunning = false;
+    this.timestamp = 1;
+    this.version = "";
+    this.caps = { rssi: false, adc: false };   // 能力探测结果
+}
+
+Radio.prototype.connect = async function () {
+    this.port = await navigator.serial.requestPort();
+    await this.port.open({ baudRate: 115200 });
+    this.writer = this.port.writable.getWriter();
+    this.startReadLoop();
+};
+
+Radio.prototype.disconnect = async function () {
+    this.readLoopRunning = false;
+    /* 清空所有在途事务，避免断开后还有定时器挂着 */
+    while (this.pending.length) {
+        var p = this.pending.shift();
+        clearTimeout(p.timer);
+        p.reject(new Error("已断开"));
+    }
+    try { if (this.reader) { await this.reader.cancel(); } } catch (e) { }
+    try { if (this.writer) { this.writer.releaseLock(); } } catch (e) { }
+    try { if (this.port) { await this.port.close(); } } catch (e) { }
+    this.port = null;
+    this.writer = null;
+}
+
+Radio.prototype.startReadLoop = function () {
+    var self = this;
+    this.readLoopRunning = true;
+
+    (async function loop() {
+        while (self.readLoopRunning && self.port && self.port.readable) {
+            self.reader = self.port.readable.getReader();
+            try {
+                for (;;) {
+                    var res = await self.reader.read();
+                    if (res.done) { break; }
+                    if (res.value && res.value.length) {
+                        var replies = self.replies.push(res.value);
+                        for (var i = 0; i < replies.length; i++) {
+                            self.dispatch(replies[i]);
+                        }
+                    }
+                }
+            } catch (e) {
+                /* 断开时读会抛异常，正常 */
+            } finally {
+                try { self.reader.releaseLock(); } catch (e) { }
+            }
+        }
+    })();
+};
+
+Radio.prototype.dispatch = function (reply) {
+    if (this.pending.length) {
+        var p = this.pending[0];
+        if (p.id === reply.id) {
+            this.pending.shift();
+            clearTimeout(p.timer);
+            p.resolve(reply);
+            return;
+        }
+    }
+    /* 没有等待者（或 ID 不匹配）：多半是上一次超时后的迟到应答，丢弃 */
+};
+
+/* 串行化的请求：任意时刻只有一个事务在途。
+ *
+ * 之前这里是"无上限并发队列"，一旦某条命令不被固件支持（例如未开启
+ * ENABLE_EXTRA_UART_CMD 时的 0x0527），每次超时都会留下一条pending，
+ * 而新请求继续入队，队列无限增长 —— 连后续的 0x0514 重握手也永远排在
+ * 超时请求之后，表现为整个工具假死。现在改成：
+ *   - 新请求进来时，先丢弃任何已超时的旧事务
+ *   - 只保留最新的事务，旧的直接 reject
+ * 这样任何一条不被支持的命令最多让当前一轮失败，不会拖垮后续。
+ */
+Radio.prototype.request = function (id, data, expectId, timeoutMs) {
+    if (!this.port || !this.writer) { return Promise.reject(new Error("未连接")); }
+
+    var self = this;
+
+    /* 丢弃过期的在途事务（正常情况下不会发生，因为调用方是串行的） */
+    while (this.pending.length && this.pending[0].expired) {
+        var dead = this.pending.shift();
+        clearTimeout(dead.timer);
+        dead.reject(new Error("已被新请求取代"));
+    }
+
+    var frame = buildCommand(id, data);
+
+    return new Promise(function (resolve, reject) {
+        var entry = {
+            id: expectId,
+            expired: false,
+            resolve: resolve,
+            reject: reject,
+            timer: null
+        };
+
+        entry.timer = setTimeout(function () {
+            entry.expired = true;
+            var idx = self.pending.indexOf(entry);
+            if (idx >= 0) { self.pending.splice(idx, 1); }
+            reject(new Error("命令 0x" + id.toString(16).toUpperCase() + " 超时"));
+        }, timeoutMs || 1200);
+
+        self.pending.push(entry);
+
+        self.writer.write(frame).catch(function (e) {
+            var idx = self.pending.indexOf(entry);
+            if (idx >= 0) { self.pending.splice(idx, 1); }
+            clearTimeout(entry.timer);
+            reject(e);
+        });
+    });
+};
+
+/* 写一个原始帧（用于能力探测时只发不等） */
+Radio.prototype.writeRaw = function (frame) {
+    if (!this.writer) { return Promise.reject(new Error("未连接")); }
+    return this.writer.write(frame);
+};
+
+/* 丢掉接收缓冲里积压的字节，让下一次请求从干净状态开始。
+ * 探测命令不被支持时不会有应答，但也不该让后续解析错位。 */
+Radio.prototype.flushReplies = function () {
+    this.replies.buffer = new Uint8Array(0);
+};
+
+Radio.prototype.handshake = async function () {
+    this.timestamp = (Math.random() * 0xFFFFFF) | 1;
+    var reply = await this.request(CMD.DEV_INFO, new Uint8Array(u32le(this.timestamp)),
+                                   CMD.DEV_INFO_RSP, 1500);
+    var t = "";
+    for (var i = 0; i < 16 && reply.data[i]; i++) {
+        t += String.fromCharCode(reply.data[i]);
+    }
+    this.version = t;
+    return t;
+};
+
+Radio.prototype.readEeprom = async function (offset, size) {
+    if (size > EEPROM_READ_MAX) {
+        throw new Error("单次读取最多 " + EEPROM_READ_MAX + " 字节");
+    }
+
+    var d = new Uint8Array(8);
+    d.set(u16le(offset), 0);
+    d[2] = size;
+    d[3] = 0;
+    d.set(u32le(this.timestamp), 4);
+
+    var reply = await this.request(CMD.READ_EEPROM, d, CMD.READ_EEPROM_RSP, 1500);
+    if (reply.data.length < 4) { throw new Error("读应答过短"); }
+    return reply.data.slice(4, 4 + reply.data[2]);
+};
+
+Radio.prototype.readRssi = async function () {
+    var reply = await this.request(CMD.READ_RSSI, new Uint8Array(0), CMD.READ_RSSI_RSP, 800);
+    if (reply.data.length < 4) { throw new Error("RSSI 应答过短"); }
+    return {
+        rssi: readU16(reply.data, 0),
+        noise: reply.data[2],
+        glitch: reply.data[3]
+    };
+};
+
+Radio.prototype.readAdc = async function () {
+    var reply = await this.request(CMD.READ_ADC, new Uint8Array(0), CMD.READ_ADC_RSP, 800);
+    if (reply.data.length < 4) { throw new Error("ADC 应答过短"); }
+    return {
+        voltage: readU16(reply.data, 0),
+        current: readU16(reply.data, 2)
+    };
+};
+
+/* 探测 0x0527 / 0x0529 是否编译进固件。
+ *
+ * 这两条命令包在 #ifdef ENABLE_EXTRA_UART_CMD 里（uart.c:907-914），而该宏
+ * 默认是 FALSE —— Fusion/Labs 等 preset 都没显式打开。未编译时固件落到
+ * switch 的 default 分支，**不回任何东西**，只能靠超时判定。
+ *
+ * 探测失败不算错误：只是把 RSSI/电压从界面隐藏，其余功能照常。
+ */
+Radio.prototype.probeCapabilities = async function () {
+    this.caps = { rssi: false, adc: false };
+
+    try {
+        await this.request(CMD.READ_RSSI, new Uint8Array(0), CMD.READ_RSSI_RSP, 700);
+        this.caps.rssi = true;
+    } catch (e) {
+        this.flushReplies();
+    }
+
+    try {
+        await this.request(CMD.READ_ADC, new Uint8Array(0), CMD.READ_ADC_RSP, 700);
+        this.caps.adc = true;
+    } catch (e) {
+        this.flushReplies();
+    }
+
+    return this.caps;
+};
+
+/* ------------------------------------------------------------------ 状态 */
+
+var radio = new Radio();
+var timer = null;
+var connected = false;
+var stats = { n: 0, t0: 0, lastMs: 0 };
+var ioFail = { eeprom: 0, rssi: 0 };
+
+/* RSSI 保持：省电时射频芯片休眠，读数会断续。保留最后一次有效值，
+ * 超过 RSSI_HOLD_MS 没有新值才清空（避免"永远卡在旧读数"）。 */
+var RSSI_HOLD_MS = 4000;
+var rssiHold = { value: null, at: 0 };
+
+/* 频率格式化。
+ *
+ * 关键：EEPROM 里存的频率计数单位是 **10 Hz**，不是 Hz。
+ * 依据电台自己的格式化代码 App/ui/main.c:304：
+ *     sprintf(pBuffer, "%u.%05u", frequency / 100000u, frequency % 100000u);
+ * 即"整数部分 = f/100000，小数部分 = f%100000（补足 5 位）"。
+ * 1 MHz / 10 Hz = 100000，所以 f/100000 正好是 MHz 整数部分。
+ *
+ * 实测对照（用户电台屏幕 439.50000 MHz）：
+ *     原始值 43950000 -> 电台显示 439.50000，43750000 -> 437.50000
+ * 之前用 f/1e6 是错的，会把 439.50000 显示成 43.95000（小数点左移一位）。
+ */
+function fmtMHz(f) {
+    if (!f || f === 0xFFFFFFFF || f > 2000000000) { return "--.-----"; }
+    /* 照抄电台的整数/小数拆分，避免浮点误差 */
+    var whole = Math.floor(f / 100000);
+    var frac = f % 100000;
+    return whole + "." + String(frac).padStart(5, "0");
+}
+
+/* 偏频用同一个 10Hz 单位（App/radio.c:472-475 与写入侧 settings.c:1243）。
+ * 旁证：固件用 _1GHz_in_KHz = 100000000（frequencies.h:22）当作"1 GHz"的
+ * 判据，100000000 个计数 = 1e9 Hz，即 1 计数 = 10 Hz。 */
+function fmtOffset(f) {
+    if (!f) { return null; }
+    var whole = Math.floor(f / 100000);
+    var frac = f % 100000;
+    return whole + "." + String(frac).padStart(5, "0");
+}
+
+/* 0x0529 返回的是 ADC 原始 12 位计数，不是毫伏！
+ * App/board.c:181  *pVoltage = LL_ADC_REG_ReadConversionData12(ADC1);
+ * App/board.c:182  *pCurrent = 0;   ← 电流恒为 0，固件根本没读
+ *
+ * 换算公式来自 App/helper/battery.c:148：
+ *     gBatteryVoltageAverage = (Voltage * 760) / gBatteryCalibration[3];
+ * 结果是 10mV 单位（如 780 = 7.80V）。
+ * 校准值 gBatteryCalibration[3] 在扁平 EEPROM 0x00B000 + 0x140 处 —— 注意
+ * 固件里写的是物理地址 0x010000+0x140（settings.c:540），而扁平地址是
+ * 0x00B000（eeprom_compat.c:75 的映射），走 0x051B 要用扁平的那个。
+ */
+var BATT_CAL_OFFSET = 0x00B000 + 0x140;
+var battCal = 2000;   /* 默认 2000，与固件回退值一致（settings.c:553） */
+var dBmCorr = DBMCORR_DEFAULT.slice();   /* 频段 RSSI 修正，连接时从 EEPROM 覆盖 */
+var squelchLevel = null;                 /* gEeprom.SQUELCH_LEVEL, 0..9 */
+
+function fmtAdcVolt(raw) {
+    if (raw === 0 || raw === 0xFFFF) { return "—"; }
+    var v10mV = Math.round((raw * 760) / battCal);
+    return (v10mV / 100).toFixed(2) + " V";
+}
+
+/* 原始 RSSI -> dBm。
+ *
+ * App/driver/bk4819.c:398-402：
+ *     int16_t BK4819_GetRSSI_dBm(void) {
+ *         uint16_t rssi = BK4819_GetRSSI();      // REG_67 & 0x1FF
+ *         return (rssi / 2) - 160;
+ *     }
+ * 再叠加频段修正（App/app/rxtx_log.c:282-284）：
+ *     rssiDbm = BK4819_GetRSSI_dBm() + dBmCorrTable[band];
+ *
+ * 注意固件内部用的是整数除法 (rssi / 2)，为保持一致这里也用 Math.floor。
+ * dBmCorrTable 可以从 EEPROM 0x00A0B9 读出（每频段一个 int8）。
+ */
+function rssiToDbm(raw, band) {
+    if (raw === null || raw === undefined) { return null; }
+    var idx = (band === undefined) ? 0 : bandIndexClamped(band);
+    var corr = (dBmCorr[idx] !== undefined) ? dBmCorr[idx] : 0;
+    return Math.floor(raw / 2) - 160 + corr;
+}
+
+/* App/ui/menu.c:207 —— OUTPUT_POWER 直接索引这张表，共 8 项（0..7）。
+ * 之前漏了 "USER"，导致 P7 显示成未知名。 */
+var POWER_NAMES = ["USER", "LOW 1", "LOW 2", "LOW 3", "LOW 4", "LOW 5", "MID", "HIGH"];
+var MOD_NAMES   = ["FM", "AM", "USB", "LSB", "UKN"];
+
+/* 由信道号判断它代表什么。
+ * 记忆信道在电台屏幕上是"信道号 + 1"（App/ui/main.c:1698 的 %04u 用
+ * ScreenChannel + 1），所以显示时也要加 1 才对得上用户看到的编号。
+ * 同时给出 VFO/MR 模式：IS_MR_CHANNEL 即内存信道，否则是频段 VFO
+ * （App/ui/main.c:1693 就是这么区分两种显示方式的）。 */
+function describeChannel(ch) {
+    if (ch <= MR_CHANNEL_LAST) {
+        return { kind: "mr", mode: "MR", label: "信道 " + (ch + 1) };
+    }
+    if (ch >= NOAA_CHANNEL_FIRST && ch <= NOAA_CHANNEL_LAST) {
+        return { kind: "noaa", mode: "MR", label: "气象 " + (1 + ch - NOAA_CHANNEL_FIRST) };
+    }
+    var band = ch - FREQ_CHANNEL_FIRST;
+    if (band >= 0 && band < BAND_NAMES.length) {
+        return { kind: "band", mode: "VFO", label: "VFO " + BAND_NAMES[band] };
+    }
+    return { kind: "?", mode: "?", label: "信道 " + (ch + 1) };
+}
+
+/* 读一个 VFO 当前显示信道的频率与属性。
+ * 频段 VFO 的记录地址 = VFO_BASE[vfo] + (channel - 1024) * 32
+ * 记忆信道      的地址 = channel * 16
+ */
+async function readVfo(channel, vfo) {
+    var base;
+    if (channel <= MR_CHANNEL_LAST) {
+        base = channel * MR_RECORD_SIZE;
+    } else {
+        var band = channel - FREQ_CHANNEL_FIRST;
+        if (band < 0 || band >= BAND_NAMES.length) { return null; }
+        base = VFO_BASE[vfo] + band * VFO_SLOT_STRIDE;
+    }
+
+    var rec = await radio.readEeprom(base, VFO_RECORD_SIZE);
+    if (rec.length < VFO_RECORD_SIZE) { return null; }
+
+    var freq = readU32(rec, VFO_OFF_FREQ);
+
+    return {
+        freq: freq,
+        offset: readU32(rec, VFO_OFF_FREQ + 4),   /* 单位 Hz（radio.c:472） */
+        offsetDir: rec[VFO_OFF_MOD] & 0x0F,       /* 0=关 1=加 2=减 */
+        codeRx: rec[VFO_OFF_CODE_RX],
+        codeTx: rec[VFO_OFF_CODE_TX],
+        codeTypeRx: rec[VFO_OFF_CODETYPE] & 0x0F,        /* 1=CTCSS 2=DCS-N 3=DCS-I */
+        codeTypeTx: rec[VFO_OFF_CODETYPE] >> 4,
+        mod: rec[VFO_OFF_MOD] >> 4,
+        power: (rec[VFO_OFF_FLAGS] >> 2) & 7,
+        width: (rec[VFO_OFF_FLAGS] >> 1) & 1,
+        /* 频段号用于 RSSI 的 dBm 修正 */
+        band: bandOf(channel, freq)
+    };
+}
+
+/* 从信道号推出频段索引（0..6），与 App/radio.c 的 band 变量对应。
+ * 频段 VFO 的信道号是 FREQ_CHANNEL_FIRST + band。 */
+function bandOfBandChannel(ch) {
+    if (ch >= FREQ_CHANNEL_FIRST && ch < FREQ_CHANNEL_FIRST + BAND_NAMES.length) {
+        return ch - FREQ_CHANNEL_FIRST;
+    }
+    return -1;
+}
+
+/* 频率 -> 频段。镜像 App/frequencies.c:118-125 的 FREQUENCY_GetBand：
+ * 从最高频段往下扫，第一个 lower 满足即返回。
+ *
+ * 索引必须严格对齐 App/frequencies.h:33-43 的枚举（8 项，0..7）：
+ *   0 BAND1_50MHz   1 BAND2_108MHz  2 BAND3_137MHz  3 BAND4_174MHz
+ *   4 BAND5_350MHz  5 BAND6_400MHz  6 (未定义)      7 BAND7_470MHz
+ * 固件用的是指定初始化器，所以 BAND7_470MHz 落在**索引 7**，
+ * 而索引 6 从未赋值（保持 0）。表里必须留出这个空位。
+ *
+ * 频率单位是 **10Hz**（14550000 == 145.5 MHz），与 EEPROM 里的 u32 一致。
+ * 边界见 App/frequencies.c:38-45（ENABLE_WIDE_RX 变体，Labs 已开启）。
+ */
+var BAND_LOWER_10HZ = [
+    1800000,     /* [0] BAND1_50MHz  : 18 MHz  (BX4819_band1_lower) */
+    10800000,    /* [1] BAND2_108MHz : 108 MHz */
+    13700000,    /* [2] BAND3_137MHz : 137 MHz */
+    17400000,    /* [3] BAND4_174MHz : 174 MHz */
+    35000000,    /* [4] BAND5_350MHz : 350 MHz */
+    40000000,    /* [5] BAND6_400MHz : 400 MHz */
+    0,           /* [6] 未定义 —— 固件里没有对应初始化项 */
+    47000000     /* [7] BAND7_470MHz : 470 MHz */
+];
+
+/* dBmCorrTable 只有 7 项（App/misc.c:153），但频段枚举有 8 个（0..7）。
+ * 固件自己写 dBmCorrTable[gRxVfo->Band]，落在 BAND7_470MHz(7) 时就是越界读。
+ * 这里夹紧到表范围内，避免主机侧也越界。 */
+function bandIndexClamped(band) {
+    if (band < 0) { return 0; }
+    if (band >= dBmCorr.length) { return dBmCorr.length - 1; }
+    return band;
+}
+
+function bandOfFrequency(freq10hz) {
+    for (var i = BAND_LOWER_10HZ.length - 1; i >= 0; i--) {
+        if (BAND_LOWER_10HZ[i] > 0 && freq10hz >= BAND_LOWER_10HZ[i]) { return i; }
+    }
+    return 0;
+}
+
+/* 统一入口：频段 VFO 用信道号，记忆信道用频率 */
+function bandOf(ch, freq10hz) {
+    var b = bandOfBandChannel(ch);
+    if (b >= 0) { return b; }
+    if (freq10hz) { return bandOfFrequency(freq10hz); }
+    return 0;
+}
+
+/* CTCSS / DCS 码显示。
+ *
+ * VFO 记录里存的 Code 是**表索引**，不是频率（App/radio.c:287-303 的
+ * RADIO_ValidateAndSetCode 把索引限制在表长度内）。码类型在 +0x0A 字节：
+ *   bit0-3 = RX CodeType, bit4-7 = TX CodeType
+ * CodeType 取值（App/settings.h）：0=关, 1=CTCSS, 2=DCS 正码, 3=DCS 反码。
+ *
+ * 显示格式照抄电台自己（App/ui/main.c:2115-2124）：
+ *   CTCSS -> CTCSS_Options[Code] / 10  即 88.5Hz
+ *   DCS   -> DCS_Options[Code] 以八进制打印，后缀 N（正）/ I（反）
+ */
+var CTCSS_OPTIONS = [
+    670, 693, 719, 744, 770, 797, 825, 854, 885, 915,
+    948, 974, 1000, 1035, 1072, 1109, 1148, 1188, 1230, 1273,
+    1318, 1365, 1413, 1462, 1514, 1567, 1598, 1622, 1655, 1679,
+    1713, 1738, 1773, 1799, 1835, 1862, 1899, 1928, 1966, 1995,
+    2035, 2065, 2107, 2181, 2257, 2291, 2336, 2418, 2503, 2541
+];
+
+var DCS_OPTIONS = [
+    0x0013, 0x0015, 0x0016, 0x0019, 0x001A, 0x001E, 0x0023, 0x0027,
+    0x0029, 0x002B, 0x002C, 0x0035, 0x0039, 0x003A, 0x003B, 0x003C,
+    0x004C, 0x004D, 0x004E, 0x0052, 0x0055, 0x0059, 0x005A, 0x005C,
+    0x0063, 0x0065, 0x006A, 0x006D, 0x006E, 0x0072, 0x0075, 0x007A,
+    0x007C, 0x0085, 0x008A, 0x0093, 0x0095, 0x0096, 0x00A3, 0x00A4,
+    0x00A5, 0x00A6, 0x00A9, 0x00AA, 0x00AD, 0x00B1, 0x00B3, 0x00B5,
+    0x00B6, 0x00B9, 0x00BC, 0x00C6, 0x00C9, 0x00CD, 0x00D5, 0x00D9,
+    0x00DA, 0x00E3, 0x00E6, 0x00E9, 0x00EE, 0x00F4, 0x00F5, 0x00F9,
+    0x0109, 0x010A, 0x010B, 0x0113, 0x0119, 0x011A, 0x0125, 0x0126,
+    0x012A, 0x012C, 0x012D, 0x0132, 0x0134, 0x0135, 0x0136, 0x0143,
+    0x0146, 0x014E, 0x0153, 0x0156, 0x015A, 0x0166, 0x0175, 0x0186,
+    0x018A, 0x0194, 0x0197, 0x0199, 0x019A, 0x01AC, 0x01B2, 0x01B4,
+    0x01C3, 0x01CA, 0x01D3, 0x01D9, 0x01DA, 0x01DC, 0x01E3, 0x01EC
+];
+
+function fmtCode(code, codeType) {
+    /* 注意：索引 0 是合法值（CTCSS 67.0Hz / DCS 023N），不能当"未设置"跳过。
+     * 只有 0xFF 才是无效哨兵。是否显示完全由 codeType 决定。 */
+    if (code === 0xFF || code === undefined || code === null) { return ""; }
+
+    if (codeType === 1) {
+        if (code >= CTCSS_OPTIONS.length) { return ""; }
+        var hz10 = CTCSS_OPTIONS[code];
+        return "CTCSS " + Math.floor(hz10 / 10) + "." + (hz10 % 10) + "Hz";
+    }
+
+    if (codeType === 2 || codeType === 3) {
+        if (code >= DCS_OPTIONS.length) { return ""; }
+        var oct = DCS_OPTIONS[code].toString(8).padStart(3, "0");
+        return "DCS " + oct + (codeType === 3 ? "I" : "N");
+    }
+
+    return "";
+}
+
+/* ------------------------------------------------------------ 界面更新 */
+
+function setVfoUI(which, info, isMain, isOther, rssi, activeBand, holding) {
+    var tag = $("tag" + which);
+    var mode = $("mode" + which);
+    var st = $("state" + which);
+    var fq = $("freq" + which);
+    var sub = $("sub" + which);
+    var bar = $("bar" + which);
+    var val = $("rssi" + which);
+    var hold = $("hold" + which);
+
+    /* 命令接口拿不到"此刻是否在发射"，只能标出用户选中的主 VFO。
+     * 主侧 = 会用 PTT 发射的那一侧。 */
+    tag.className = "vfo-tag" + (isMain ? " active" : "");
+
+    /* VFO / MR 模式标记：由 ScreenChannel 是否落在记忆信道区间决定，
+     * 与电台 UI 的判断方式一致（App/ui/main.c:1693 IS_MR_CHANNEL）。 */
+    if (info) {
+        var d = describeChannel(info.ch);
+        mode.textContent = d.mode;
+        mode.className = "mode-tag" + (d.mode === "MR" ? " mr" : "");
+        mode.style.visibility = "visible";
+    } else {
+        mode.style.visibility = "hidden";
+    }
+
+    if (isMain) {
+        st.className = "state rx";
+        st.textContent = "主 · PTT";
+    } else {
+        st.className = "state idle";
+        st.textContent = "副";
+    }
+
+    if (info) {
+        fq.textContent = fmtMHz(info.freq);
+        var parts = [];
+        parts.push(describeChannel(info.ch).label);
+
+        /* 偏频单位同样是 10Hz（radio.c:472-475）；方向来自 VFO 记录 +0x0B
+         * 的低 4 位（settings.h:103-105）：0=关, 1=加, 2=减。 */
+        if (info.offsetDir !== 0 && info.offset > 0) {
+            var sign = info.offsetDir === 2 ? "-" : "+";
+            var off = fmtOffset(info.offset);
+            if (off) { parts.push("偏频 " + sign + off); }
+        }
+
+        var c = fmtCode(info.codeRx, info.codeTypeRx);
+        if (c) { parts.push(c); }
+        parts.push(MOD_NAMES[info.mod] || ("MOD" + info.mod));
+        parts.push(POWER_NAMES[info.power] || ("P" + info.power));
+        sub.textContent = parts.join(" · ");
+    } else {
+        fq.textContent = "--.-----";
+        sub.innerHTML = "&nbsp;";
+    }
+
+    /* RSSI：原始值换算成 dBm 显示（带频段修正），并保留相对条。
+     *
+     * 省电机制会让读数断续：空闲时固件调 BK4819_Sleep() 让射频芯片休眠
+     * （app.c:1476-1481，gRxIdleMode = true），此时 REG_67 会读到陈旧或 0 值，
+     * 于是 RSSI"时有时无"。这里做保持（hold）：读到有效值就刷新并记住，
+     * 读到 0/无效值则沿用上一次的有效读数，并打上"保持"标记。
+     * 只有长时间（RSSI_HOLD_MS）拿不到有效值才真正清空。 */
+    if (!radio.caps.rssi) {
+        bar.style.width = "0%";
+        val.textContent = "不支持";
+        hold.style.display = "none";
+    } else if (!isMain) {
+        /* RSSI 反映当前接收链路，只有主侧有意义 */
+        bar.style.width = "0%";
+        val.textContent = "";
+        hold.style.display = "none";
+    } else {
+        var fresh = (rssi !== null && rssi !== undefined && rssi > 0);
+        if (fresh) {
+            rssiHold.value = rssi;
+            rssiHold.at = performance.now();
+        }
+        var use = fresh ? rssi : rssiHold.value;
+        var held = !fresh && use !== null &&
+                   (performance.now() - rssiHold.at) < RSSI_HOLD_MS;
+
+        if (use !== null) {
+            var pct = Math.max(0, Math.min(100, (use / 511) * 100));
+            bar.style.width = pct.toFixed(1) + "%";
+            val.textContent = rssiToDbm(use, activeBand) + " dBm";
+            hold.style.display = held ? "inline-block" : "none";
+        } else {
+            bar.style.width = "0%";
+            val.textContent = "—";
+            hold.style.display = "none";
+        }
+    }
+}
+
+/* --------------------------------------------------------------- 主循环 */
+
+async function tick() {
+    if (!connected) { return; }
+
+    /* 连续失败计数：EEPROM 读取是老本行，它失败说明链路真有问题。
+     * RSSI/ADC 不被支持时会持续失败，但那不影响核心显示，所以分开处理。 */
+    var t1 = performance.now();
+    try {
+        /* 先续期握手（0x051B 强制校验时间戳，uart.c:410-411），
+         * 放在 tick 内串行执行，避免和轮询请求抢总线。 */
+        await ensureHandshake(false);
+
+        /* RSSI：真·瞬时值。仅在固件支持时读。 */
+        var rssi = null;
+        if (radio.caps.rssi) {
+            var r = await radio.readRssi();
+            rssi = r.rssi;
+            ioFail.rssi = 0;
+        }
+
+        /* EEPROM：核心数据。ScreenChannel 决定每个 VFO 当前显示什么 */
+        var chans = await radio.readEeprom(SCREEN_CH_BASE, 16);
+        var ch0 = readU16(chans, 0);
+        var ch1 = readU16(chans, 6);
+
+        var txv = await radio.readEeprom(TX_VFO_OFFSET, 1);
+        var txVfo = txv[0] < 2 ? txv[0] : 0;
+
+        var info0 = await readVfo(ch0, 0);
+        if (info0) { info0.ch = ch0; }
+        var info1 = await readVfo(ch1, 1);
+        if (info1) { info1.ch = ch1; }
+
+        ioFail.eeprom = 0;
+
+        /* 哪个 VFO 是"主"（用户选中的收发侧）。
+         * 注意：命令接口无法读到"当前正在发射"这个瞬时状态 —— 固件没有
+         * 暴露它。TX_VFO 只表示用户选中的主 VFO，不代表此刻在发射。
+         * RSSI 反映当前接收链路，只挂在主侧上（副侧的读数在省电切换时会
+         * 张冠李戴，显示出来反而误导）。 */
+        var act = info0 && txVfo === 0 ? info0 : info1;
+
+        setVfoUI("A", info0, txVfo === 0, txVfo !== 0, rssi, act ? act.band : 0);
+        setVfoUI("B", info1, txVfo === 1, txVfo !== 1, rssi, act ? act.band : 0);
+
+        /* 静噪等级（gEeprom.SQUELCH_LEVEL, 0..9） */
+        var sq = await radio.readEeprom(SQUELCH_OFFSET, 1);
+        squelchLevel = sq[0] < 10 ? sq[0] : 1;
+        $("stSql").textContent = "SQL" + squelchLevel;
+
+        /* 电压：ADC 原始值需按校准换算 */
+        if (radio.caps.adc) {
+            var adc = await radio.readAdc();
+            $("stVolt").textContent = fmtAdcVolt(adc.voltage);
+            /* 固件把 Current 恒置 0（board.c:182），不显示免得误导 */
+            $("stCur").textContent = adc.current === 0 ? "不支持" : (adc.current + " mA");
+        } else {
+            $("stVolt").textContent = "不支持";
+            $("stCur").textContent = "不支持";
+        }
+
+        if (act) {
+            $("stPwr").textContent = POWER_NAMES[act.power] || ("P" + act.power);
+            $("stMod").textContent = MOD_NAMES[act.mod] || ("MOD" + act.mod);
+        }
+
+        $("linkDot").className = "dot on";
+        $("linkTxt").textContent = "在线 · " + (txVfo === 0 ? "A" : "B") + " 主";
+
+        /* 速率统计 */
+        stats.n++;
+        stats.lastMs = performance.now() - t1;
+        var now = performance.now();
+        if (now - stats.t0 > 2000) {
+            var hz = stats.n / ((now - stats.t0) / 1000);
+            $("stRate").textContent = hz.toFixed(1) + " Hz";
+            $("rateBadge").textContent = stats.lastMs.toFixed(0) + " ms/轮";
+            stats.n = 0;
+            stats.t0 = now;
+        }
+
+    } catch (e) {
+        /* EEPROM 读取失败才是真故障；RSSI/ADC 失败已在探测阶段排除 */
+        ioFail.eeprom++;
+        if (ioFail.eeprom <= 3) {
+            log("轮询错误：" + e.message, "e");
+        } else if (ioFail.eeprom === 4) {
+            log("连续失败，后续相同错误不再重复输出。", "w");
+        }
+        $("linkDot").className = "dot";
+        $("linkTxt").textContent = "通信异常";
+    }
+}
+
+function schedule() {
+    var rate = parseInt($("selRate").value, 10);
+    timer = setTimeout(async function () {
+        await tick();
+        if (connected) { schedule(); }
+    }, rate);
+}
+
+/* 心跳与轮询共用总线，但必须有独立通道。
+ *
+ * 之前 keepalive() 和 tick() 都会往 request() 里塞事务，而两者是并发的，
+ * 谁先谁后不确定 —— 一旦轮询出现大批超时，握手就被无限推后，最终
+ * gSerialConfigCountDown_500ms 过期，0x051B 开始静默失败。
+ *
+ * 现在用一个 busy 标志把总线上所有事务串行化：轮询和心跳不会互相插队，
+ * 也不会重叠。每轮 tick 完成后如果距上次握手超过 4 秒就续期。
+ */
+var lastHandshake = 0;
+
+async function ensureHandshake(force) {
+    var now = performance.now();
+    if (!force && (now - lastHandshake) < 4000) { return true; }
+    try {
+        await radio.handshake();
+        lastHandshake = performance.now();
+        return true;
+    } catch (e) {
+        log("握手续期失败：" + e.message, "w");
+        return false;
+    }
+}
+
+/* ------------------------------------------------------------------ 事件 */
+
+$("btnConnect").onclick = async function () {
+    try {
+        if (!("serial" in navigator)) {
+            log("此浏览器不支持 Web Serial。请用 Chrome / Edge / Opera，或 Firefox 151+。", "e");
+            return;
+        }
+
+        log("正在请求串口…", "i");
+        await radio.connect();
+        log("串口已打开，发送 0x0514 握手…", "i");
+
+        var ver = await radio.handshake();
+        lastHandshake = performance.now();
+        log("握手成功，固件版本：" + ver, "o");
+
+        /* 能力探测：0x0527/0x0529 只有在 ENABLE_EXTRA_UART_CMD=ON 时才编译进
+         * 固件（uart.c:907）。不支持的固件不会回任何东西，只能靠超时判定。
+         * 探测失败不阻断：隐藏对应字段，其余功能照常。 */
+        log("探测固件能力（0x0527 / 0x0529）…", "i");
+        var caps = await radio.probeCapabilities();
+
+        if (caps.rssi) {
+            log("✓ RSSI 可用（0x0527）", "o");
+        } else {
+            log("✗ RSSI 不可用：固件未编译 0x0527。" +
+                "需要以 -DENABLE_EXTRA_UART_CMD=ON 重新构建并刷机。", "w");
+        }
+
+        if (caps.adc) {
+            log("✓ 电池电压可用（0x0529）", "o");
+        } else {
+            log("✗ 电池电压不可用：固件未编译 0x0529。" +
+                "需要以 -DENABLE_EXTRA_UART_CMD=ON 重新构建并刷机。", "w");
+        }
+
+        /* 读频段 RSSI 修正表（0x00A0B9，7 个 int8）——用于把 0x0527 的
+         * 原始值换算成 dBm。读失败就用编译期默认值（misc.c:153）。 */
+        try {
+            var corr = await radio.readEeprom(DBMCORR_OFFSET, 7);
+            var got = [];
+            var ok = true;
+            for (var ci = 0; ci < 7; ci++) {
+                var v = corr[ci];
+                if (v === 0xFF) { ok = false; break; }        /* 未初始化 */
+                if (v > 127) { v -= 256; }                    /* int8 */
+                got.push(v);
+            }
+            if (ok && got.length === 7) {
+                dBmCorr = got;
+                log("频段 RSSI 修正表：" + dBmCorr.join(","), "o");
+            } else {
+                log("RSSI 修正表未初始化，用默认值 " + DBMCORR_DEFAULT.join(","), "w");
+            }
+        } catch (e) {
+            log("读 RSSI 修正表失败，用默认值：" + e.message, "w");
+        }
+
+        /* 读电池校准系数（换算 ADC 原始值用）。
+         * 扁平地址 0x00B140 = 校准区 +0x140（eeprom_compat.c:75 映射）。 */
+        if (caps.adc) {
+            try {
+                var cal = await radio.readEeprom(BATT_CAL_OFFSET, 12);
+                var c3 = readU16(cal, 6);
+                if (c3 >= 1500 && c3 <= 3500) {
+                    battCal = c3;
+                    log("电池校准系数：" + battCal, "o");
+                } else {
+                    log("校准系数异常（" + c3 + "），用默认 " + battCal, "w");
+                }
+            } catch (e) {
+                log("读校准失败，用默认 " + battCal + "：" + e.message, "w");
+            }
+        } else {
+            $("stVolt").textContent = "不支持";
+            $("stCur").textContent = "不支持";
+        }
+
+        connected = true;
+        stats.t0 = performance.now();
+        stats.n = 0;
+        ioFail.eeprom = 0;
+        ioFail.rssi = 0;
+
+        $("btnConnect").disabled = true;
+        $("btnDisconnect").disabled = false;
+        $("verBadge").textContent = ver || "已连接";
+
+        log("开始轮询 0x051B(EEPROM)" +
+            (caps.rssi ? " / 0x0527(RSSI)" : "") +
+            (caps.adc ? " / 0x0529(ADC)" : ""), "i");
+        schedule();
+
+    } catch (e) {
+        log("连接失败：" + e.message, "e");
+        try { await radio.disconnect(); } catch (x) { }
+    }
+};
+
+$("btnDisconnect").onclick = async function () {
+    connected = false;
+    if (timer) { clearTimeout(timer); timer = null; }
+    await radio.disconnect();
+
+    lastHandshake = 0;
+    radio.caps = { rssi: false, adc: false };
+
+    $("btnConnect").disabled = false;
+    $("btnDisconnect").disabled = true;
+    $("linkDot").className = "dot";
+    $("linkTxt").textContent = "离线";
+    $("verBadge").textContent = "未连接";
+    $("stRate").textContent = "—";
+    $("rateBadge").textContent = "—";
+    log("已断开。", "w");
+};
+
+$("selRate").onchange = function () {
+    if (timer) { clearTimeout(timer); }
+    if (connected) { schedule(); }
+};
+
+log("就绪。点「连接电台」开始。", "i");
+log("提示：本工具用命令接口轮询，会压制 K5Viewer 屏幕流（固件 uart.c:1495 行为）。", "w");
+
+</script>
+</body>
+</html>

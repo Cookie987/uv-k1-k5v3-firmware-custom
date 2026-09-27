@@ -299,9 +299,15 @@ void K5VIEWER_Update(bool force)
     if (deltaLen == 0 && !stateChanged && !rfLogPending && !rfLogHistoryPending)
         return;
 
-    // Skip transmission if a key is currently pressed
-    // UART_Send is blocking - would freeze the main loop and lose keypresses
-    if (gKeyReading0 != KEY_INVALID)
+    // Skip transmission if a key is currently pressed, but only on the UART
+    // transport: UART_Send busy-waits per byte and would freeze the main loop
+    // long enough to lose keypresses. The VCP path hands the buffer to the USB
+    // stack asynchronously (cdc_acm_data_send_with_dtr), so it does not need to
+    // yield to the keyboard and can keep streaming while PTT is held - which is
+    // exactly when the RF log's TX session state is worth reporting.
+    // In an ENABLE_UART-only build gUSB_K5ViewerEnabled never leaves false, so
+    // this keeps the original unconditional bail-out there.
+    if (gKeyReading0 != KEY_INVALID && !gUSB_K5ViewerEnabled)
         return;
 
 #ifdef ENABLE_FEAT_F4HWN_RXTX_LOG_K5VIEWER

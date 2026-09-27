@@ -193,6 +193,15 @@
             }
         },
         {
+            "name": "987",
+            "inherits": "Labs",
+            "cacheVariables": {
+                "ENABLE_EXTRA_UART_CMD": true,
+                "EDITION_STRING": "987",
+                "TARGET": "f4hwn.987"
+            }
+        },
+        {
             "name": "Max",
             "inherits": "Fusion",
             "cacheVariables": {
@@ -228,6 +237,10 @@
         {
             "name": "Labs",
             "configurePreset": "Labs"
+        },
+        {
+            "name": "987",
+            "configurePreset": "987"
         },
         {
             "name": "Max",
