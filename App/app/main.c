@@ -1009,6 +1009,12 @@ static void MAIN_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
     }
 
     if (gScanStateDir == SCAN_OFF) {
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+        // Navigate from the displayed priority; the normal reload ends the swap.
+        const VFO_Info_t *displayVfo = APP_GetFullWatchDisplayVfo(gEeprom.TX_VFO);
+        if (displayVfo != NULL)
+            Channel = displayVfo->CHANNEL_SAVE;
+#endif
 #ifdef ENABLE_NOAA
         if (!IS_NOAA_CHANNEL(Channel))
 #endif
@@ -1031,7 +1037,7 @@ static void MAIN_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
             Next = RADIO_FindNextChannel(Channel + Direction, Direction, false, 0);
             if (Next == 0xFFFF)
                 return;
-            if (Channel == Next)
+            if (Channel == Next && gEeprom.ScreenChannel[gEeprom.TX_VFO] == Next)
                 return;
             gEeprom.MrChannel[gEeprom.TX_VFO] = Next;
             gEeprom.ScreenChannel[gEeprom.TX_VFO] = Next;

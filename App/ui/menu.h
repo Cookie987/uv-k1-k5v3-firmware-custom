@@ -206,7 +206,11 @@ extern const char* const            gSubMenu_W_N[2];
 extern const char* const            gSubMenu_OFF_ON[2];
 extern const char*                  gSubMenu_NA;
 extern const char* const            gSubMenu_TOT[11];
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+extern const char* const            gSubMenu_RXMode[6];
+#else
 extern const char* const            gSubMenu_RXMode[4];
+#endif
 
 #ifdef ENABLE_VOICE
     extern const char* const        gSubMenu_VOICE[3];

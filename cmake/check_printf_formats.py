@@ -278,7 +278,9 @@ def main() -> int:
         *args.source_root.rglob("*.h"),
     )
     for path in sorted(source_files):
-        if "external" in path.parts:
+        # external code, and host-side test programs (App/apps/*/test) that use
+        # the host printf and are never built into the firmware
+        if "external" in path.parts or "test" in path.parts:
             continue
         errors.extend(validate_file(path, debug_defined))
 

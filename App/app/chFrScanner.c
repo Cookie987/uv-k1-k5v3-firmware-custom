@@ -416,35 +416,7 @@ static bool ScanFastUpdateDisplayVfo(uint16_t channel, uint32_t *frequency, Modu
     }
 
     scanFastDisplayVfo = gEeprom.VfoInfo[gEeprom.RX_VFO];
-
-    scanFastDisplayVfo.CHANNEL_SAVE = channel;
-    scanFastDisplayVfo.freq_config_RX = info.rx;
-    scanFastDisplayVfo.freq_config_TX = info.tx;
-    scanFastDisplayVfo.TX_OFFSET_FREQUENCY = info.offset;
-    scanFastDisplayVfo.StepFrequency = info.stepFrequency;
-    scanFastDisplayVfo.STEP_SETTING = info.stepSetting;
-    scanFastDisplayVfo.Modulation = info.modulation;
-    scanFastDisplayVfo.TX_OFFSET_FREQUENCY_DIRECTION = info.txOffsetFrequencyDirection;
-    scanFastDisplayVfo.OUTPUT_POWER = info.outputPower;
-    scanFastDisplayVfo.FrequencyReverse = info.frequencyReverse;
-    scanFastDisplayVfo.CHANNEL_BANDWIDTH = info.channelBandwidth;
-    scanFastDisplayVfo.BUSY_CHANNEL_LOCK = info.busyChannelLock;
-    scanFastDisplayVfo.TX_LOCK = info.txLock;
-#ifdef ENABLE_DTMF_CALLING
-    scanFastDisplayVfo.DTMF_DECODING_ENABLE = info.dtmfDecodingEnable;
-#endif
-    scanFastDisplayVfo.DTMF_PTT_ID_TX_MODE = info.dtmfPttIdTxMode;
-
-    if (!scanFastDisplayVfo.FrequencyReverse)
-    {
-        scanFastDisplayVfo.pRX = &scanFastDisplayVfo.freq_config_RX;
-        scanFastDisplayVfo.pTX = &scanFastDisplayVfo.freq_config_TX;
-    }
-    else
-    {
-        scanFastDisplayVfo.pRX = &scanFastDisplayVfo.freq_config_TX;
-        scanFastDisplayVfo.pTX = &scanFastDisplayVfo.freq_config_RX;
-    }
+    SETTINGS_ApplyChannelScanDisplayInfo(&scanFastDisplayVfo, channel, &info);
 
     scanFastDisplayVfoValid = true;
 

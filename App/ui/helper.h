@@ -62,4 +62,8 @@ void   UI_PrintStringSmallAtPixel(const char *pString, uint8_t Start, uint8_t En
 void   UI_PrintStringSmallChannelNameBand(const char *pString, uint8_t Start, uint8_t End, uint8_t YTop);
 #endif
 
+#if defined(ENABLE_FEAT_F4HWN_MULTIBOOT) || defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+void UI_DrawMenuKeyHints(const char *act_menu, const char *act_exit);
+#endif
+
 #endif

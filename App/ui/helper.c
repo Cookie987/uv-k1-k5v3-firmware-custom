@@ -592,3 +592,20 @@ void UI_PrintStringSmallChannelNameBand(const char *pString, uint8_t Start, uint
 
 #endif
 
+#if defined(ENABLE_FEAT_F4HWN_MULTIBOOT) || defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
+/* Shared bottom row for the Apps and Multiboot selectors. The EXIT action
+ * ends at x=124; both key capsules and labels keep their original positions. */
+void UI_DrawMenuKeyHints(const char *act_menu, const char *act_exit)
+{
+    const uint8_t sp = 6u;
+    const uint8_t ae = (uint8_t)strlen(act_exit);
+    const uint8_t xm = 4u;
+    const uint8_t xe = (uint8_t)(124u - ae * 4u - sp - 16u);
+
+    GUI_DisplaySmallestInverse("MENU", xm, 6, false, true, (uint8_t)(xm + 16u));
+    GUI_DisplaySmallest(act_menu, (uint8_t)(xm + 16u + sp), 49, false, true);
+
+    GUI_DisplaySmallestInverse("EXIT", xe, 6, false, true, (uint8_t)(xe + 16u));
+    GUI_DisplaySmallest(act_exit, (uint8_t)(xe + 16u + sp), 49, false, true);
+}
+#endif

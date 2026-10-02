@@ -17,6 +17,9 @@
 #include "driver/bk4819-regs.h"
 #include <string.h>
 
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+    #include "app/app.h"
+#endif
 #include "app/dtmf.h"
 #ifdef ENABLE_FEAT_F4HWN_RXTX_LOG
     #include "app/rxtx_log.h"
@@ -295,7 +298,7 @@ void RADIO_ValidateAndSetCode(FREQ_Config_t *pFreq_Config, uint8_t tmp) {
         case CODE_TYPE_CONTINUOUS_TONE:
         case CODE_TYPE_DIGITAL:
         case CODE_TYPE_REVERSE_DIGITAL:
-            if (tmp > ((pFreq_Config->CodeType == CODE_TYPE_CONTINUOUS_TONE ? ARRAY_SIZE(CTCSS_Options) : ARRAY_SIZE(DCS_Options)) - 1))
+            if (tmp > ((pFreq_Config->CodeType == CODE_TYPE_CONTINUOUS_TONE ? ARRAY_SIZE(CTCSS_Options) : DCS_OPTION_COUNT) - 1))
                 tmp = 0;
             break;
     }
@@ -1224,7 +1227,12 @@ void RADIO_PrepareTX(void)
         if (!gRxVfoIsActive)
         {   // use the current RX vfo
             gEeprom.RX_VFO = gEeprom.TX_VFO;
-            gRxVfo         = gTxVfo;
+#ifdef ENABLE_FEAT_F4HWN_FULL_WATCH
+            VFO_Info_t *fullWatchVfo = APP_GetFullWatchDisplayVfo(gEeprom.TX_VFO);
+            gRxVfo = fullWatchVfo != NULL ? fullWatchVfo : gTxVfo;
+#else
+            gRxVfo = gTxVfo;
+#endif
             gRxVfoIsActive = true;
         }
 

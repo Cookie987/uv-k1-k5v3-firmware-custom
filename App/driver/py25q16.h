@@ -31,13 +31,12 @@ void PY25Q16_SectorErase(uint32_t Address);
 void PY25Q16_ReadBufferPhysical(uint32_t Address, void *pBuffer, uint32_t Size);
 #endif
 
-#ifdef ENABLE_FEAT_F4HWN_EXT_FLASH_RW
+#if defined(ENABLE_FEAT_F4HWN_EXT_FLASH_RW) || defined(ENABLE_AIRCOPY_FLASH)
 /* Full external-flash access by TRUE physical address, bypassing the active
  * config-bank mapping (BankMap) and the sector cache. Backs the host
- * dump/restore UART commands (uart.c: 0x0738 read, 0x073A sector erase,
- * 0x073C write, 0x073E CRC32), so the whole 2 MiB image can be captured and every
- * non-calibration sector can be rewritten regardless of which config bank is
- * currently selected. The UART layer protects calibration mutations. */
+ * dump/restore UART commands and cable AirCopy, so the whole 2 MiB image can be
+ * captured and every non-calibration sector can be rewritten regardless of
+ * which config bank is currently selected. Callers protect calibration. */
 
 /* Total capacity of the external SPI flash (2 MiB). */
 #define PY25Q16_TOTAL_SIZE  0x00200000u
@@ -84,12 +83,11 @@ uint8_t *PY25Q16_OverlayBuffer(void);
  * and the firmware's direct config reads/writes (settings.c) end up here, so
  * one offset covers them all - no per-call-site patching.
  *
- * Set once at boot, before any settings read, from
+ * Set at boot, before any settings read, from
  *   PY25Q16_SetBankBase(MB_BankBase(MB_BootResolveState()));
- * and never changed again during a session (a slot restore or SetCfg selection
- * records the next bank and resets first), so the banking itself never needs a
- * cache flush. Raw bank erases behind the driver explicitly call
- * PY25Q16_InvalidateCache().
+ * A hot SetCfg switch may change it later, but only after explicitly dropping
+ * the sector cache and before reloading all settings. Raw bank erases behind
+ * the driver also call PY25Q16_InvalidateCache().
  */
 #define PY25Q16_BANK_SHARED_FROM  0x00010000u   /* calibration boundary (see flash map) */
 void PY25Q16_SetBankBase(uint32_t Base);
