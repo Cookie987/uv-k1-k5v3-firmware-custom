@@ -166,6 +166,10 @@ int32_t TX_freq_check(const uint32_t Frequency)
     if (RX_freq_check(Frequency))
         return -1;
 
+    // ENABLE_RX_NO_GAP leaves 630-840 MHz to the F_LOCK switch below: every
+    // profile except F_LOCK_NONE (UNLOCK ALL) rejects that span on its own, so
+    // TX there is reachable only with UNLOCK ALL.
+
     switch (gSetting_F_LOCK)
     {
         case F_LOCK_DEF:
@@ -279,8 +283,13 @@ int32_t RX_freq_check(const uint32_t Frequency)
     if (Frequency < frequencyBandTable[0].lower || Frequency > frequencyBandTable[BAND_N_ELEM - 1].upper)
         return -1;  // not allowed outside this range
 
+#ifndef ENABLE_RX_NO_GAP
     if (Frequency >= BX4819_band1.upper && Frequency < BX4819_band2.lower)
         return -1;  // BX chip does not work in this range
+#else
+    // ENABLE_RX_NO_GAP: the gap is open here; TX_freq_check() still gates the
+    // TX side of it behind F_LOCK_NONE (UNLOCK ALL).
+#endif
 
     return 0;  // OK frequency
 }

@@ -41,6 +41,7 @@
                 "ENABLE_CUSTOM_MENU_LAYOUT": true,
                 "ENABLE_KEEP_MEM_NAME": true,
                 "ENABLE_WIDE_RX": true,
+                "ENABLE_RX_NO_GAP": false,
                 "ENABLE_F_CAL_MENU": false,
                 "ENABLE_CTCSS_TAIL_PHASE_SHIFT": false,
                 "ENABLE_BOOT_BEEPS": false,
@@ -58,6 +59,7 @@
                 "ENABLE_EXTRA_UART_CMD": false,
                 "ENABLE_FEAT_F4HWN": true,
                 "ENABLE_FEAT_F4HWN_FULL_WATCH": false,
+                "ENABLE_FEAT_F4HWN_RX_BLINK_INVERSE": false,
                 "ENABLE_FEAT_F4HWN_GAME": false,
                 "ENABLE_FEAT_F4HWN_K5VIEWER": false,
                 "ENABLE_FEAT_F4HWN_SPECTRUM": true,
@@ -205,6 +207,8 @@
             "inherits": "Labs",
             "cacheVariables": {
                 "ENABLE_EXTRA_UART_CMD": true,
+                "ENABLE_FEAT_F4HWN_RX_BLINK_INVERSE": true,
+                "ENABLE_RX_NO_GAP": true,
                 "EDITION_STRING": "987",
                 "TARGET": "f4hwn.987"
             }

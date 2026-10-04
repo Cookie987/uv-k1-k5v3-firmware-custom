@@ -70,6 +70,47 @@ center_line_t center_line = CENTER_LINE_NONE;
     }
 #endif
 
+#ifdef ENABLE_FEAT_F4HWN_RX_BLINK_INVERSE
+/* 正在接收的信道/频率反色闪烁。
+ * 做法仿叮咚鸡固件（DualVfoXorHStripColumns / UI_PrintStringSmallAtPixelCnInverse）：
+ * 内容照常画完之后，把该 VFO 的数据区整块 XOR，于是「白底黑字」与「黑底白字」逐次翻转。
+ * gFlashLightBlinkCounter 每 10 ms 加一，50 个 tick 为半个周期，即 500 ms 反色 / 500 ms 正常。 */
+#define RX_INVERSE_BLINK_HALF_TICKS 100u
+
+static bool UI_RxInverseBlinkOn(void)
+{
+    return ((gFlashLightBlinkCounter / RX_INVERSE_BLINK_HALF_TICKS) & 1u) != 0u;
+}
+
+/* 本 VFO 此刻是否正在接收（与画 RX 指示的判断一致） */
+static bool UI_VfoIsReceiving(unsigned int vfo_num)
+{
+    return FUNCTION_IsRx() &&
+           (unsigned int)gEeprom.RX_VFO == vfo_num &&
+           VfoState[vfo_num] == VFO_STATE_NORMAL;
+}
+
+/* 把 [x0, x1] × [yTop, yBottom] 内的像素取反；y 为 LCD 绝对坐标，状态栏(0..7)不参与 */
+static void UI_InvertPixelBand(uint8_t x0, uint8_t x1, uint8_t yTop, uint8_t yBottom)
+{
+    if (yTop < 8u)
+        yTop = 8u;
+    if (yBottom > 63u)
+        yBottom = 63u;
+    if (x1 >= LCD_WIDTH)
+        x1 = (uint8_t)(LCD_WIDTH - 1u);
+
+    for (uint8_t y = yTop; y <= yBottom; y++)
+    {
+        const uint8_t bit = (uint8_t)(1u << (y & 7u));
+        uint8_t      *row = gFrameBuffer[(uint8_t)((y - 8u) >> 3)];
+
+        for (uint8_t x = x0; x <= x1; x++)
+            row[x] ^= bit;
+    }
+}
+#endif
+
 #ifdef ENABLE_FEAT_F4HWN_SCAN_PROGRESS
 #define SCAN_PROGRESS_MR_CHANNEL_BYTES ((MR_CHANNELS_MAX + 7u) / 8u)
 // Scan-list name hold, in 10 ms ticks. Counted down on the 10 ms timeslice (not the
@@ -1275,6 +1316,7 @@ void UI_MAIN_TimeSlice10ms(void)
         && --gScanListNameCountdown_10ms == 0)
         gUpdateDisplay = true;
 }
+
 #endif
 
 void UI_MAIN_TimeSlice500ms(void)
@@ -1287,6 +1329,11 @@ void UI_MAIN_TimeSlice500ms(void)
 
         if(FUNCTION_IsRx()) {
             DisplayRSSIBar(true);
+#ifdef ENABLE_FEAT_F4HWN_RX_BLINK_INVERSE
+            /* 正在接收：每 500 ms 重绘主界面一次，信道/频率的反色才会真的闪起来
+             * （相位由 UI_RxInverseBlinkOn() 从 10 ms 计数推导，与此处同周期）。 */
+            gUpdateDisplay = true;
+#endif
         }
 #ifdef ENABLE_FEAT_F4HWN // Blink Green Led for white...
         else if(gSetting_set_eot > 0 && RxBlinkLed == 2)
@@ -1546,6 +1593,10 @@ void UI_DisplayMain(void)
 #else
         const VFO_Info_t *displayVfo = &gEeprom.VfoInfo[vfo_num];
         const uint16_t displayChannel = gEeprom.ScreenChannel[vfo_num];
+#endif
+
+#ifdef ENABLE_FEAT_F4HWN_RX_BLINK_INVERSE
+        bool cjkNameDrawn = false;   // 汉字信道名走的是两行块，反色区域随之改变
 #endif
 
 #ifdef ENABLE_FEAT_F4HWN
@@ -2030,6 +2081,9 @@ void UI_DisplayMain(void)
 
                             UI_PrintStringSmallAtPixel(String, 33, 0, y_top,
                                                       (uint8_t)(y_top + 15u), 0u);
+#ifdef ENABLE_FEAT_F4HWN_RX_BLINK_INVERSE
+                            cjkNameDrawn = true;
+#endif
                             break;
                         }
 #endif
@@ -2122,6 +2176,25 @@ void UI_DisplayMain(void)
 #endif
             }
         }
+
+#ifdef ENABLE_FEAT_F4HWN_RX_BLINK_INVERSE
+        // 正在接收：把本 VFO 的信道/频率整块反色，并按 500 ms 周期闪烁
+        if (UI_RxInverseBlinkOn() && UI_VfoIsReceiving(vfo_num))
+        {
+            const uint8_t yTop = (uint8_t)((line + 1u) * 8u);   // 本 VFO 两行文本块的起始像素行
+
+            if (isMainOnly() && IS_MR_CHANNEL(displayChannel) &&
+                gEeprom.CHANNEL_DISPLAY_MODE == MDF_NAME_FREQ && !cjkNameDrawn)
+            {   // 主信道单显示：信道名在上一行，频率在下面 line+3 的大字块
+                UI_InvertPixelBand(32u, 127u, yTop, (uint8_t)(yTop + 7u));
+                UI_InvertPixelBand(32u, 127u, (uint8_t)(yTop + 24u), (uint8_t)(yTop + 39u));
+            }
+            else
+            {
+                UI_InvertPixelBand(32u, 127u, yTop, (uint8_t)(yTop + 15u));
+            }
+        }
+#endif
 
         // ----------------------------------------
 

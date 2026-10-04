@@ -626,10 +626,12 @@ static void MAIN_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             if (Frequency < frequencyBandTable[0].lower) {
                 Frequency = frequencyBandTable[0].lower;
             }
+#ifndef ENABLE_RX_NO_GAP
             else if (Frequency >= BX4819_band1.upper && Frequency < BX4819_band2.lower) {
                 const uint32_t center = (BX4819_band1.upper + BX4819_band2.lower) / 2;
                 Frequency = (Frequency < center) ? BX4819_band1.upper : BX4819_band2.lower;
             }
+#endif
             else if (Frequency > frequencyBandTable[BAND_N_ELEM - 1].upper) {
                 Frequency = frequencyBandTable[BAND_N_ELEM - 1].upper;
             }
@@ -648,11 +650,13 @@ static void MAIN_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
             Frequency = FREQUENCY_RoundToStep(Frequency, gTxVfo->StepFrequency);
 
+#ifndef ENABLE_RX_NO_GAP
             if (Frequency >= BX4819_band1.upper && Frequency < BX4819_band2.lower)
             {   // clamp the frequency to the limit
                 const uint32_t center = (BX4819_band1.upper + BX4819_band2.lower) / 2;
                 Frequency = (Frequency < center) ? BX4819_band1.upper - gTxVfo->StepFrequency : BX4819_band2.lower;
             }
+#endif
 
             gTxVfo->freq_config_RX.Frequency = Frequency;
 

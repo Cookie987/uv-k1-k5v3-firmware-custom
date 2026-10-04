@@ -166,6 +166,12 @@ enable_feature(ENABLE_SMALL_BOLD)
 enable_feature(ENABLE_CUSTOM_MENU_LAYOUT)
 enable_feature(ENABLE_KEEP_MEM_NAME)
 enable_feature(ENABLE_WIDE_RX)
+# The BK4819 datasheet excludes 630-840 MHz; some parts (BK4829) may tune it.
+# Only useful together with the wide band table, so require it.
+enable_feature(ENABLE_RX_NO_GAP)
+if(ENABLE_RX_NO_GAP AND NOT ENABLE_WIDE_RX)
+    message(FATAL_ERROR "ENABLE_RX_NO_GAP requires ENABLE_WIDE_RX.")
+endif()
 enable_feature(ENABLE_F_CAL_MENU)
 enable_feature(ENABLE_CTCSS_TAIL_PHASE_SHIFT)
 enable_feature(ENABLE_BOOT_BEEPS)
@@ -201,6 +207,10 @@ enable_feature(ENABLE_FEAT_F4HWN)
 enable_feature(ENABLE_FEAT_F4HWN_FULL_WATCH)
 if(ENABLE_FEAT_F4HWN_FULL_WATCH AND NOT ENABLE_FEAT_F4HWN)
     message(FATAL_ERROR "ENABLE_FEAT_F4HWN_FULL_WATCH requires ENABLE_FEAT_F4HWN.")
+endif()
+enable_feature(ENABLE_FEAT_F4HWN_RX_BLINK_INVERSE)
+if(ENABLE_FEAT_F4HWN_RX_BLINK_INVERSE AND NOT ENABLE_FEAT_F4HWN)
+    message(FATAL_ERROR "ENABLE_FEAT_F4HWN_RX_BLINK_INVERSE requires ENABLE_FEAT_F4HWN.")
 endif()
 # GAME keeps the F+7 hook; the resident breakout.c is compiled only when the
 # overlay does NOT provide Breakout as an app (that is the flash we recover).
