@@ -19,7 +19,7 @@
  * Vertices are spun by three axis rotations in Q14 fixed point (Cortex-M0+ has
  * no FPU and no hardware divide), then perspective-projected with a multiply by
  * a reciprocal from the assets, exactly equal to the divide it replaces, so no
- * libgcc division is linked. Two looks, toggled with F:
+ * libgcc division is linked. Two looks, toggled with F then STAR:
  *   - SOLID: hidden-line removal by back-face culling (a face is drawn only when
  *     the signed area of its projected polygon shows it facing us).
  *   - WIRE : every edge, with the far hemisphere dotted for a depth cue.
@@ -28,11 +28,11 @@
  * speeds are read-only assets (gen_assets.py; faces with a uniform outward
  * winding from an offline convex-hull extractor). They are copied onto the stack
  * (the sine once, the displayed solid every frame), so none of them occupies the
- * 4 KiB overlay and a solid can be added without touching this file.
+ * 4 KiB overlay. The globe is rendered procedurally as a latitude/longitude grid.
  * Pure compute, no radio.
  *
- * Keys: UP/DOWN speed · 1-9 shape · STAR next shape · F solid/wire ·
- *       MENU pause · EXIT quit.
+ * Keys: UP/DOWN speed · F+UP/DOWN zoom · 1-9 shape · STAR next shape ·
+ *       F+STAR solid/wire · 0 reset view · MENU pause · EXIT quit.
  */
 
 #include <stdint.h>
@@ -50,6 +50,9 @@
 
 static const app_api_t *A;
 static const int16_t *sinq; /* Q14 sine quadrant, on app_main's stack      */
+static const uint16_t *recipq;
+static int rcx, rsx, rcy, rsy, rcz, rsz;
+static uint8_t zoomq;       /* Q4 screen scale: 16 = 100% */
 
 static int sin8(uint8_t angle)
 {
@@ -111,6 +114,90 @@ static int proj(int n, uint32_t m)
     return n < 0 ? -q : q;
 }
 
+/* Rotate, project and retain rotated depth for hidden-line decisions. */
+static void project_point(int x, int y, int z, int16_t *px, int16_t *py, int16_t *pz)
+{
+    int ny = (y * rcx - z * rsx) >> 14;
+    int nz = (y * rsx + z * rcx) >> 14;
+    y = ny; z = nz;
+    int nx = (x * rcy + z * rsy) >> 14;
+    nz     = (z * rcy - x * rsy) >> 14;
+    x = nx; z = nz;
+    nx = (x * rcz - y * rsz) >> 14;
+    ny = (x * rsz + y * rcz) >> 14;
+    x = nx; y = ny;
+
+    int zc = z + (int)DIST;
+    if (zc < (int)RECIP_ZMIN) zc = RECIP_ZMIN;
+    if (zc > (int)RECIP_ZMAX) zc = RECIP_ZMAX;
+    const uint32_t m = recipq[zc - (int)RECIP_ZMIN];
+    int qx = proj(x * (int)FOCAL, m), qy = proj(y * (int)FOCAL, m);
+    qx = qx < 0 ? -(((-qx) * zoomq) >> 4) : (qx * zoomq) >> 4;
+    qy = qy < 0 ? -(((-qy) * zoomq) >> 4) : (qy * zoomq) >> 4;
+    *px = (int16_t)(CX + qx);
+    *py = (int16_t)(CY + qy);
+    *pz = (int16_t)z;
+}
+
+#define GLOBE_R        36
+#define GLOBE_SCREEN_R 19
+
+/* Latitude/longitude use the same 256-step turn as sin8(). Longitude zero is
+ * the front of the globe, and positive latitude is drawn upward. */
+static void globe_point(int8_t lat, int8_t lon, int16_t *x, int16_t *y, int16_t *z)
+{
+    const uint8_t la = (uint8_t)lat, lo = (uint8_t)lon;
+    const int r = (GLOBE_R * sin8((uint8_t)(la + 64u))) >> 14;
+    const int gx = (r * sin8(lo)) >> 14;
+    const int gy = -((GLOBE_R * sin8(la)) >> 14);
+    const int gz = -((r * sin8((uint8_t)(lo + 64u))) >> 14);
+    project_point(gx, gy, gz, x, y, z);
+}
+
+static void globe_edge(int16_t x0, int16_t y0, int16_t z0,
+                       int16_t x1, int16_t y1, int16_t z1, bool wire)
+{
+    if (z0 <= 0 && z1 <= 0)
+        draw_edge(x0, y0, x1, y1, false);
+    else if (wire && z0 >= 0 && z1 >= 0)
+        draw_edge(x0, y0, x1, y1, true);
+}
+
+static void draw_globe(bool wire)
+{
+    int16_t x0, y0, z0, x1, y1, z1;
+
+    /* Three parallels, each split into 16 short segments. */
+    for (int8_t lat = -32; lat <= 32; lat += 32) {
+        globe_point(lat, 0, &x0, &y0, &z0);
+        for (uint16_t lon = 16; lon <= 256u; lon += 16u) {
+            globe_point(lat, (int8_t)lon, &x1, &y1, &z1);
+            globe_edge(x0, y0, z0, x1, y1, z1, wire);
+            x0 = x1; y0 = y1; z0 = z1;
+        }
+    }
+
+    /* Eight pole-to-pole half-meridians make four complete great circles. */
+    for (uint16_t lon = 0; lon < 256u; lon += 32u) {
+        globe_point(-64, (int8_t)lon, &x0, &y0, &z0);
+        for (int8_t lat = -48; lat <= 64; lat += 16) {
+            globe_point(lat, (int8_t)lon, &x1, &y1, &z1);
+            globe_edge(x0, y0, z0, x1, y1, z1, wire);
+            x0 = x1; y0 = y1; z0 = z1;
+        }
+    }
+
+    /* A stable limb keeps the globe legible when most grid lines are edge-on. */
+    const int limb = (GLOBE_SCREEN_R * zoomq) >> 4;
+    x0 = (int16_t)(CX + limb); y0 = CY;
+    for (uint16_t a = 8; a <= 256u; a += 8u) {
+        x1 = (int16_t)(CX + ((limb * sin8((uint8_t)(a + 64u))) >> 14));
+        y1 = (int16_t)(CY + ((limb * sin8((uint8_t)a)) >> 14));
+        draw_edge(x0, y0, x1, y1, false);
+        x0 = x1; y0 = y1;
+    }
+}
+
 /* Signed area of a packed face's projected polygon (<0 == facing us). */
 static int face_area(const uint8_t *f, const int16_t *px, const int16_t *py)
 {
@@ -132,24 +219,29 @@ void app_main(const app_api_t *api)
     A->backlight_on();
     A->status_clear();
 
-    /* Assets copied to the stack: the sine once, the displayed solid every
+    /* Assets copied to the stack: shared tables once, the displayed solid every
      * frame (nv, nf, name + NUL, vertices, packed faces; see gen_assets.py). */
     int16_t sin_q[SIN_Q_LEN / 2u];
     uint16_t recip[RECIP_LEN / 2u];   /* by zc - RECIP_ZMIN */
+    char pause[T_PAUSE_LEN];
     uint8_t rec[SHAPE_REC_MAX];
     uint8_t nshape;
     int16_t px[MAXV], py[MAXV], pz[MAXV];   /* projected x, y and rotated depth */
     A->asset_read(SIN_Q, sin_q, sizeof(sin_q));
     A->asset_read(RECIP, recip, sizeof(recip));
+    A->asset_read(T_PAUSE, pause, sizeof(pause));
     sinq = sin_q;
+    recipq = recip;
     if (A->asset_read(SHAPES, &nshape, 1) != 1u || nshape == 0u)
         return;
 
     uint16_t ax = 0, ay = 0, az = 0;   /* Q2 half-units: 2048 = full turn */
     uint8_t shape   = 0;
     uint8_t speed   = 4;               /* 1..16, shared by all three rotation axes */
+    uint8_t zoom    = 4;               /* 1..8: 62.5%..150%, level 4 = 100% */
     bool    paused  = false;
     bool    wire    = true;           /* false = solid (hidden-line)       */
+    bool    fArm    = false;          /* F: the next UP/DOWN or STAR is modified */
     bool    running = true;
     uint8_t prevKey = APP_KEY_INVALID;
 
@@ -165,6 +257,13 @@ void app_main(const app_api_t *api)
             key = APP_KEY_INVALID;
         if (key != prevKey && key != APP_KEY_INVALID) {
             A->backlight_on();
+            if (key == APP_KEY_F) {
+                fArm = !fArm;
+                prevKey = key;
+                continue;
+            }
+            const bool fn = fArm;
+            fArm = false;
             switch (key) {
                 case APP_KEY_EXIT:
                     running = false;
@@ -172,19 +271,27 @@ void app_main(const app_api_t *api)
                 case APP_KEY_UP:
                 case APP_KEY_DOWN: {
                     const int8_t dir = A->nav_dir(key);
-                    if (dir > 0 && speed < 16u) speed++;
-                    if (dir < 0 && speed > 1u) speed--;
+                    if (fn) {
+                        if (dir > 0 && zoom < 8u) zoom++;
+                        if (dir < 0 && zoom > 1u) zoom--;
+                    } else {
+                        if (dir > 0 && speed < 16u) speed++;
+                        if (dir < 0 && speed > 1u) speed--;
+                    }
                     break;
                 }
                 case APP_KEY_MENU:
                     paused = !paused;
                     break;
                 case APP_KEY_STAR:   /* next shape, wrapping without a modulo */
-                    if (++shape >= nshape)
+                    if (fn)
+                        wire = !wire;
+                    else if (++shape >= nshape)
                         shape = 0;
                     break;
-                case APP_KEY_F:
-                    wire = !wire;
+                case APP_KEY_0:
+                    ax = ay = az = 0;
+                    zoom = 4;
                     break;
                 case APP_KEY_1: case APP_KEY_2: case APP_KEY_3: case APP_KEY_4:
                 case APP_KEY_5: case APP_KEY_6: case APP_KEY_7: case APP_KEY_8:
@@ -211,44 +318,33 @@ void app_main(const app_api_t *api)
             namelen++;
         const int8_t (*verts)[3] = (const int8_t (*)[3])&rec[3u + namelen];
         const uint8_t ia = (uint8_t)(ax >> 3), ib = (uint8_t)(ay >> 3), ic = (uint8_t)(az >> 3);
-        const int cx = sin8((uint8_t)(ia + 64u)), sxr = sin8(ia);
-        const int cy = sin8((uint8_t)(ib + 64u)), syr = sin8(ib);
-        const int cz = sin8((uint8_t)(ic + 64u)), szr = sin8(ic);
+        zoomq = (uint8_t)(8u + 2u * zoom);
+        rcx = sin8((uint8_t)(ia + 64u)); rsx = sin8(ia);
+        rcy = sin8((uint8_t)(ib + 64u)); rsy = sin8(ib);
+        rcz = sin8((uint8_t)(ic + 64u)); rsz = sin8(ic);
 
         for (uint8_t i = 0; i < nv; i++) {
-            int x = verts[i][0], y = verts[i][1], z = verts[i][2];
-            int ny = (y * cx - z * sxr) >> 14;      /* Rx */
-            int nz = (y * sxr + z * cx) >> 14;
-            y = ny; z = nz;
-            int nx = (x * cy + z * syr) >> 14;       /* Ry */
-            nz     = (z * cy - x * syr) >> 14;
-            x = nx; z = nz;
-            nx = (x * cz - y * szr) >> 14;           /* Rz */
-            ny = (x * szr + y * cz) >> 14;
-            x = nx; y = ny;
-
-            int zc = z + (int)DIST;                  /* always > 0 */
-            if (zc < (int)RECIP_ZMIN) zc = RECIP_ZMIN;   /* inside the table: */
-            if (zc > (int)RECIP_ZMAX) zc = RECIP_ZMAX;   /* never hit in practice */
-            const uint32_t m = recip[zc - (int)RECIP_ZMIN];
-            px[i] = (int16_t)(CX + proj(x * (int)FOCAL, m));
-            py[i] = (int16_t)(CY + proj(y * (int)FOCAL, m));
-            pz[i] = (int16_t)z;
+            project_point(verts[i][0], verts[i][1], verts[i][2],
+                          &px[i], &py[i], &pz[i]);
         }
 
         clear_screen();
-        const uint8_t *f = &rec[3u + namelen + 3u * rec[0]];   /* packed faces */
-        for (uint8_t i = 0; i < nf; i++) {
-            const uint8_t n = f[0];
-            if (wire || face_area(f, px, py) < 0) {  /* else hidden face culled */
-                for (uint8_t k = 0; k < n; k++) {
-                    const uint8_t a = f[1u + k];
-                    const uint8_t b = f[(k + 1u == n) ? 1u : 2u + k];
-                    const bool dotted = wire && (pz[a] + pz[b] > 0);   /* far half */
-                    draw_edge(px[a], py[a], px[b], py[b], dotted);
+        if (nv == 0u && nf == 0u) {
+            draw_globe(wire);
+        } else {
+            const uint8_t *f = &rec[3u + namelen + 3u * rec[0]];   /* packed faces */
+            for (uint8_t i = 0; i < nf; i++) {
+                const uint8_t n = f[0];
+                if (wire || face_area(f, px, py) < 0) {  /* else hidden face culled */
+                    for (uint8_t k = 0; k < n; k++) {
+                        const uint8_t a = f[1u + k];
+                        const uint8_t b = f[(k + 1u == n) ? 1u : 2u + k];
+                        const bool dotted = wire && (pz[a] + pz[b] > 0);   /* far half */
+                        draw_edge(px[a], py[a], px[b], py[b], dotted);
+                    }
                 }
+                f += 1u + n;
             }
-            f += 1u + n;
         }
 
         /* Shape name: inverse label, top-left of the status bar (scan-list look). */
@@ -256,6 +352,10 @@ void app_main(const app_api_t *api)
         for (uint8_t i = 0; i <= end; i++)
             A->status_line[i] = 0;
         A->print_inverse((const char *)&rec[2], 2, 0, true, true, end);
+        if (fArm)
+            A->asset_read(BMP_F, A->status_line + 70, BMP_F_LEN);
+        if (paused)
+            A->print_inverse(pause, 82, 0, true, true, 104);
 
         A->blit_status();
         A->blit_full();

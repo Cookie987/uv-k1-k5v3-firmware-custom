@@ -21,7 +21,7 @@
  * The source is the boot-message callsign (API boot_callsign) with an SSID;
  * destination, the WIDE path entries, symbol and comment are AX.25-encoded in
  * gen_assets.py (assets). The position, the SSID, the path (DIRECT, WIDE1-1
- * or WIDE1-1,WIDE2-1) and the symbol are edited on the radio (key 5) and saved; gen_assets.py
+ * or WIDE1-1,WIDE2-1) and the symbol are edited on the radio (key 3) and saved; gen_assets.py
  * holds the defaults. The frame is built at launch and after each edit, FCS
  * included.
  *
@@ -35,7 +35,7 @@
  * Keys (UV-K5 and UV-K1): PTT or MENU send · UP/DOWN (held) scroll the frame
  *   1 px per loop · 1 / F then 1 tone level up / down (deviation, REG_70 gain
  *   10-127) · 2 / F then 2 twist up / down: 2200 Hz gain = level x (8 + tw) / 8,
- *   tw -4..+8 (-6..+6 dB), for a receiver's de-emphasis · 5 edit the position,
+ *   tw -4..+8 (-6..+6 dB), for a receiver's de-emphasis · 3 edit the position,
  *   SSID, path and symbol · * scroll view / compact view · EXIT quit. F as FoxHunt's: the next key goes down, an icon
  *   in the status bar while armed.
  * Editor (the field under the cursor in bold): 0-9 type a digit (the cursor
@@ -378,16 +378,12 @@ static void draw(void){
         fieldRow(s+T_SSID,v,0,2,g.cur==CUR_SSID);
         fieldRow(s+T_PATH,s+T_PATHS+g.epath*T_PATHS_STRIDE,0,3,g.cur==CUR_PATH);
         A->asset_read((uint16_t)(SYM_CODES+g.esym*2u),v,2); v[2]='\0';
-        if(g.cur==CUR_SYM){
-            fieldRow(s+T_SYM,v,0,4,true);
-            drawSymbol(SYM_X,g.esym);
-            tiny(40,put(str,s+T_HELP1));
-            tiny(48,put(str,g.status==ST_BADPOS?s+T_BADPOS:s+T_HELP2));
-        } else {
-            fieldRow(s+T_SYM,v,0,4,false);
-            tiny(40,put(str,s+T_HELP1));
-            tiny(48,put(str,g.status==ST_BADPOS?s+T_BADPOS:s+T_HELP2));
-        }
+        fieldRow(s+T_SYM,v,0,4,g.cur==CUR_SYM);
+        /* the icon stays on whatever the cursor: the help lines end at x = 100,
+         * before SYM_X */
+        drawSymbol(SYM_X,g.esym);
+        tiny(40,put(str,s+T_HELP1));
+        tiny(48,put(str,g.status==ST_BADPOS?s+T_BADPOS:s+T_HELP2));
     } else {
         g.vrow=0;
         if(g.flen){
@@ -556,7 +552,7 @@ static void handleKeys(void){
         else if(g.tw<TW_MAX) g.tw++;
     }
     else if(key==APP_KEY_STAR){ g.cw^=CW_COMPACT; g.top=0; }   /* the view */
-    else if(key==APP_KEY_5){
+    else if(key==APP_KEY_3){
         memcpy(g.ed,g.pos,POS_DIGITS);
         g.ehemi=g.hemi; g.essid=g.ssid; g.epath=g.path; g.esym=g.sym;
         g.cur=0;

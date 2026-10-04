@@ -27,7 +27,7 @@ WIDE = ["WIDE1-1", "WIDE2-1"]              # path n = the first n entries
 PATHS = ["DIRECT", "WIDE1-1", "WIDE1-1,2-1"]   # shown on the radio, per path
 LAT, LON = "4850.90N", "00216.25E"         # default position: DDMM.hhN, DDDMM.hhE
 SYMBOL = "/["                              # table, code: '[' = person
-COMMENT = "UV-K5 & UV-K1 APRS TX"
+COMMENT = "UV-K5/K1 F4HWN Firmware"
 # info field: "!" + LAT + SYMBOL[0] + LON + SYMBOL[1] + COMMENT
 
 TITLE = "APRS TX"

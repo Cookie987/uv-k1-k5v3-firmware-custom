@@ -206,7 +206,7 @@ def main():
     f = build_c(blob, D)
     ssid = D["CFG_SSID"]
     WIDE = ["WIDE1-1", "WIDE2-1"]                                # gen_assets.py WIDE
-    info = "!4850.90N/00216.25E[UV-K5 & UV-K1 APRS TX"          # gen_assets.py defaults
+    info = "!4850.90N/00216.25E[UV-K5/K1 F4HWN Firmware"          # gen_assets.py defaults
     ref = build("%s-%d" % (CALL, ssid) if ssid else CALL, dst="APZK5",
                 path=WIDE[:D["CFG_PATH"]], info=info)
     print("frame  ", decode(f), "(%d bytes)" % len(f))
@@ -224,7 +224,7 @@ def main():
     pos = [3, 3, 5, 2, 1, 3, 1, 5, 1, 1, 2, 5, 6]           # 33 52.13S 151 12.56W
     f2 = build_c(blob, D, pos=pos, hemi=3)
     want = build("F4HWN-7", dst="APZK5", path=["WIDE1-1"],
-                 info="!3352.13S/15112.56W[UV-K5 & UV-K1 APRS TX")
+                 info="!3352.13S/15112.56W[UV-K5/K1 F4HWN Firmware")
     ok &= f2 == want
     print("edited position frame:", f2 == want, decode(f2))
     # SSID and path edited: every path, SSID 0 (no suffix) and 15
@@ -235,7 +235,7 @@ def main():
         print("SSID %2d, path %d frame:" % (sid, path), f3 == want, decode(f3))
     f3 = build_c(blob, D, sym=0)
     want = build("F4HWN-7", dst="APZK5", path=["WIDE1-1"],
-                 info="!4850.90N/00216.25E#UV-K5 & UV-K1 APRS TX")
+                 info="!4850.90N/00216.25E#UV-K5/K1 F4HWN Firmware")
     ok &= f3 == want
     print("selected /# symbol frame:", f3 == want, decode(f3))
     c = cfg_pack(70, -2, pos, 3, 9, 2, CW_COMPACT)

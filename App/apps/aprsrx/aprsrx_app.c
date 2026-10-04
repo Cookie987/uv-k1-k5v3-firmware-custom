@@ -33,9 +33,9 @@
  * are served every 50 ms only while no slicer is inside a preamble or a
  * plausible frame; the redraw follows a new frame, a key, or every 5 s.
  *
- * Keys (UV-K5 and UV-K1): UP/DOWN (held) scroll the frame 1 px per slot ·
- *   * scroll view / compact view (saved) · 1 speaker on/off (off at launch:
- *   the decoder does not need it) · MENU clear · EXIT quit.
+ * Keys (UV-K5 and UV-K1): UP/DOWN (held) scroll the frame 1 px per slot when
+ *   needed · * scroll view / compact view (saved) · 1 speaker on/off (saved, off by
+ *   default: the decoder does not need it) · 2 clear · EXIT quit.
  * The loader re-runs RADIO_SetupRegisters on exit; the app restores the ADC,
  * PA4, the DAC and its clock itself.
  */
@@ -80,7 +80,7 @@ static inline volatile uint32_t *hw(uint32_t a){
 #define CYC_PER_SAMPLE (48000000u / FS)            /* 5000 */
 #define HOUSE_EVERY    480u    /* samples between key/screen slots (50 ms)       */
 #define BUSY_MAX       60u     /* serve them anyway after 60 busy slots (3 s)    */
-#define REFRESH_MS     5000u   /* periodic redraw (battery)                      */
+#define REFRESH_SLOTS  100u    /* 100 housekeeping slots = 5 s (battery redraw) */
 #define REDRAW_ON      1u      /* g.redraw: a key or the periodic refresh        */
 #define REDRAW_FRAME   2u      /* g.redraw: a new frame, also wakes the backlight */
 #define DUP_MS         1000u   /* the same frame from another slicer             */
@@ -143,21 +143,23 @@ typedef struct {
  * ldr <= 124); the registers saved for the exit, used twice, go last.
  * The loader zeroes the overlay (.bss) at every launch. */
 static struct {
-    uint8_t  seq, prevKey, redraw, spk; /* spk: speaker amplifier on (key 1)    */
+    uint8_t  prevKey, redraw;
     bool     running;
-    uint8_t  top, lim, vrow;           /* scroll (px) and its limit, row being drawn */
+    uint8_t  top, lim, vrow;             /* scroll, limit / temporary coarse row, virtual row */
     uint8_t  symTable, symCode;         /* symbol extracted from the displayed frame */
-    uint8_t  cw;                       /* view: 0 scroll, CW_COMPACT compact (saved) */
+    uint8_t  cw, spk;                  /* the saved settings, in cfg order: view (0 scroll,
+                                            CW_COMPACT compact), speaker amplifier on (key 1) */
+    uint8_t  refresh;                  /* housekeeping slots since the last redraw */
     int16_t  rssi;                     /* RSSI at the end of the last frame       */
     uint16_t flen, nOk;                /* frame length, frames                    */
     const app_api_t *A;
+    char *text;                        /* formatting buffer (app_main's stack)    */
     uint8_t *frm;                      /* last good frame (app_main's stack)      */
-    uint32_t vfoFreq;                  /* VFO RX frequency at launch, 10 Hz units */
     uint32_t tPrev, tCyc;              /* SysTick cycle counter                   */
-    uint32_t tFrame, tDraw;            /* ticks_ms of the last frame, last redraw */
+    uint32_t tFrame;                   /* ticks_ms of the last frame              */
     uint32_t savedSqr3, savedSmpr3, savedModer, savedDac, savedRcc, savedDhr;
 } g;
-static char str[34];
+#define str g.text
 
 /* ---- tiny freestanding helpers: GCC may turn the zeroing / copy loops into calls ---- */
 void *memset(void *d, int c, size_t n) {
@@ -200,8 +202,7 @@ static void tiny(uint8_t y,char *end){ *end='\0'; g.A->print_tiny(str,0,y,false,
  *   show at g.top = 0;
  * - compact (g.cw = CW_COMPACT): the source in the small font, then rows of 32
  *   tiny characters (4 px each), 6 px apart from y = 8 (the 3x5 glyphs: one
- *   blank px between rows), the 4th ending at y = 30; no scroll, the rest of
- *   the frame is not shown. */
+ *   blank px between rows); overflow enables the same 1-pixel scroll. */
 #define ROW_CHARS   18u
 #define CW_COMPACT  14u    /* compact rows: ROW_CHARS + 14 = 32 characters */
 
@@ -292,7 +293,6 @@ static void accept(const sl_t *m){
         memcpy(g.frm,m->buf,n);
         g.flen=n;
         g.nOk++;                           /* wraps after 65535: still one tiny row */
-        g.seq++;
         g.rssi=A->rssi_dbm();              /* the carrier is still up: closing flags */
         g.top=0;
         g.redraw|=REDRAW_FRAME;
@@ -415,11 +415,9 @@ static char *putCall(char *o,const uint8_t *a){
 __attribute__((noinline))
 static char safe(uint8_t ch){ return (ch<0x20u||ch>0x7Eu)?'.':(char)ch; }
 
-/* One row str..end of the frame, wrapped every ROW_CHARS + g.cw (neither font
- * clips). Scroll view: row r goes to line r - top/8 when that is 0..4: line 4
- * (under the separator, redrawn after) only feeds the pixel shift of draw().
- * Row 0, the source, is drawn in bold (same 7 px glyphs) on line 0 in both
- * views; compact rows 1-4 in the tiny font, the next ones dropped. */
+/* One row str..end of the frame, wrapped every ROW_CHARS + g.cw. Row 0 uses
+ * the small bold font. In compact view it stays fixed; the following 3x5 rows
+ * use a five-row staging window below it, shifted by draw() one pixel at a time. */
 static char *emit(char *end){
     const app_api_t *A=g.A;
     char *p=str;
@@ -427,9 +425,14 @@ static char *emit(char *end){
         unsigned w=ROW_CHARS+g.cw;   /* 18 or 32; compare lengths before forming p + w */
         char *q=((unsigned)(end-p)>w)?p+w:end;
         char c=*q; *q='\0';
-        uint8_t r=g.vrow, ln=(uint8_t)(r-(g.top>>3));    /* top = 0 when compact */
-        if(g.cw && r){ if(r<5u) A->print_tiny(p,0,(uint8_t)(r*6u+2u),false,true); }
-        else if(ln<5u) (r?A->print_normal:A->print_bold)(p,0,0,ln);
+        uint8_t r=g.vrow;
+        if(g.cw && r){
+            uint8_t row=(uint8_t)(r-g.lim);
+            if(row && row<6u) A->print_tiny(p,0,(uint8_t)(2u+6u*row),false,true);
+        } else {
+            uint8_t ln=(uint8_t)(r-(g.cw?0u:g.lim));
+            if(ln<5u) (r?A->print_normal:A->print_bold)(p,0,0,ln);
+        }
         *q=c;
         g.vrow=(uint8_t)(r+1u);
         p=q;
@@ -575,6 +578,9 @@ static void draw(void){
     A->display_clear();
     A->status_clear();
     g.vrow=0;
+    g.lim=0;                              /* coarse row while emit() builds the screen */
+    uint8_t rem=g.top, step=g.cw?6u:8u;
+    while(rem>=step){ rem-=step; g.lim++; }
     g.symTable=g.symCode=0;
     A->print_inverse(s+T_TITLE,2,0,true,true,(uint8_t)(2u+T_TITLE_CHARS*4u));
     A->draw_battery();
@@ -585,7 +591,7 @@ static void draw(void){
         const uint8_t *f=g.frm;
         uint16_t end=(uint16_t)(g.flen-2u);    /* the FCS is not shown */
 
-        o=putCall(str,f+7); *o++=' '; *o++='#'; o=puti(o,g.seq);
+        o=putCall(str,f+7);
         emit(o);                             /* source */
 
         /* ">DEST,DIGI*,..." while it fits 2 rows, then the rest of the
@@ -604,35 +610,38 @@ static void draw(void){
         if(end>=i+9u && micType(f[i])) drawMicE(f,i,end,s);
         else if(!drawPos(f,i,end)) textRows(str,f,i,end);
     }
-    /* the scroll limit: the last row fully shown, its blank bit 7 on the
-     * separator; 0 when compact or when the frame fits */
+    /* Shift the visible rows upward. Compact keeps its bold source on line 0
+     * and shifts only the 3x5 body; line 4 is the one staging page. */
+    uint8_t *b=A->fb[0];
+    uint16_t first=g.cw?128u:0u;
+    for(uint16_t k=first;k<512u;k++)
+        b[k]=(uint8_t)((b[k]>>rem)|(b[k+128u]<<(8u-rem)));
+    memset(b+512,0,128);
+
+    /* The scroll limit keeps the final row fully above the separator. Compact
+     * mode fits the source plus four 6-pixel rows before it needs scrolling. */
     uint8_t lim=0;
-    if(!g.cw && g.vrow>4u) lim=(uint8_t)(g.vrow*8u-32u);
+    uint8_t shown=(uint8_t)(8u-(step>>1));
+    if(g.vrow>shown) lim=(uint8_t)((g.vrow-shown)*step);
     g.lim=lim;
-    /* status bar from SPK_X: the speaker icon while on, an up mark while rows
-     * hide above, a down mark while rows hide below */
+    /* Status bar from SPK_X: the speaker icon while on, an up mark while rows
+     * hide above, a down mark while rows hide below, in either view. */
     uint8_t t=g.spk;
     if(g.top) t+=2u;
     if(g.top<lim) t+=4u;
     A->asset_read((uint16_t)(BMP_TAIL+t*TAIL_W),A->status_line+SPK_X,TAIL_W);
 
-    /* Pixel scroll: lines 0-3 go up top%8 px, the bits below coming from the
-     * next line (an 8-bit shift of the next line gives 0 at top%8 = 0). Line
-     * 4 was only the source of line 3: cleared for the frequency. */
-    uint8_t sh=g.top&7u, *b=A->fb[0];
-    for(uint16_t k=0;k<512u;k++) b[k]=(uint8_t)((b[k]>>sh)|(b[k+128u]<<(8u-sh)));
-    memset(b+512,0,128);
-
     /* dotted separator above the frequency: y = 31, bit 7 of line 3, over
      * whatever the shift brought there (the big digits start at y = 33: one
      * blank px between) */
     for(uint8_t x=0;x<128u;x++) b[384u+x]=(uint8_t)((b[384u+x]&0x7Fu)|((~x&1u)<<7));
-    drawFreq(g.vfoFreq);
+    drawFreq(A->rx_freq());
     drawSymbol();
 
-    /* bottom line: "ok 12  -89dBm": frames, RSSI of the last one */
-    o=put(str,s+T_OK); o=puti(o,g.nOk); *o++=' '; *o++=' ';
-    o=puti(o,g.rssi); o=put(o,s+T_DBM);
+    /* bottom line: "ok 12  -89dBm": frames, RSSI of the last one (none
+     * captured yet: no dBm field rather than a bogus 0dBm) */
+    o=put(str,s+T_OK); o=puti(o,g.nOk);
+    if(g.flen){ *o++=' '; *o++=' '; o=puti(o,g.rssi); o=put(o,s+T_DBM); }
     tiny(49,o);
 }
 
@@ -640,20 +649,16 @@ static void draw(void){
 static void handleKeys(void){
     const app_api_t *A=g.A;
     uint8_t key=A->get_key();
-    /* UP/DOWN, held: scroll 1 px per slot (20 px/s), from the source row to
-     * g.lim (draw(); 0 when compact: no scroll) */
+    /* UP/DOWN, held: scroll 1 px per slot (20 px/s), only while rows overflow. */
     int8_t d=A->nav_dir(key);
     if((d<0 && g.top) || (d>0 && g.top<g.lim)){ g.top=(uint8_t)(g.top+d); g.redraw|=REDRAW_ON; }
     if(key==APP_KEY_INVALID||key==g.prevKey){ g.prevKey=key; return; }
     g.prevKey=key;
     g.redraw|=REDRAW_ON;
     if(key==APP_KEY_EXIT) g.running=false;
-    else if(key==APP_KEY_MENU){ g.flen=0; g.nOk=0; g.seq=0; g.rssi=0; g.top=0; }   /* g.lim: 0 at the redraw that follows */
+    else if(key==APP_KEY_2){ g.flen=0; g.nOk=0; g.top=0; }   /* g.lim: 0 at the redraw that follows */
     else if(key==APP_KEY_1){ g.spk^=1u; A->audio_path(g.spk); }   /* speaker, as FoxHunt's audio */
-    else if(key==APP_KEY_STAR){        /* the view, staged now: flash is written only after a change */
-        g.cw^=CW_COMPACT; g.top=0;
-        A->cfg_save(&g.cw,1);
-    }
+    else if(key==APP_KEY_STAR){ g.cw^=CW_COMPACT; g.top=0; }   /* the view (saved on exit) */
 }
 
 /* ---- keys and screen, between frames ---- */
@@ -663,11 +668,10 @@ static void house(void){
     if(!g.running) return;
     if(g.redraw&REDRAW_FRAME) A->backlight_on();   /* wake on a new frame */
     A->backlight_update();     /* normal BLTime timeout; keys re-arm it in get_key() */
-    uint32_t t=A->ticks_ms();
-    if(t-g.tDraw>=REFRESH_MS) g.redraw|=REDRAW_ON;
+    if(++g.refresh>=REFRESH_SLOTS) g.redraw|=REDRAW_ON;
     if(!g.redraw) return;
     g.redraw=0;
-    g.tDraw=t;
+    g.refresh=0;
     adcRestore();                /* the battery is on ADC channel 8 */
     A->battery_sample();
     adcSelPA4();
@@ -718,22 +722,25 @@ static void listen(void){
 __attribute__((section(".text.entry"),used))
 void app_main(const app_api_t *api){
     uint8_t frm[FRAME_MAX];      /* on the stack: the 4 KiB overlay also holds .bss */
+    char text[34];
     g.A=api;
+    g.text=text;
     g.frm=frm;
-    g.prevKey=APP_KEY_INVALID;   /* the rest of g starts at 0 (overlay zeroed by the loader) */
+    /* The overlay loader zeroes g; the first idle key scan records APP_KEY_INVALID. */
 
     g.savedSqr3=ADC_SQR3; g.savedSmpr3=ADC_SMPR3; g.savedModer=GPIOA_MODER; g.savedDac=DAC_CR;
     g.savedRcc=RCC_APBENR1; g.savedDhr=DAC_DHR12R1;
     biasOn();
     api->backlight_on();
-    g.vfoFreq=api->rx_freq();
-    api->cfg_load(&g.cw,1);      /* the view; erased flash (0xFF) or junk: scroll */
+    api->cfg_load(&g.cw,2);      /* view and speaker; erased flash (0xFF) or junk:
+                                    scroll, speaker off */
     if(g.cw!=CW_COMPACT) g.cw=0;
-    /* Speaker amplifier (PA8) off: the decoder does not need it (tested on the
-     * radio, 2026-09-30): PA4, the voice-prompt DAC pin, joins the audio before
-     * the amplifier; only the BK4829 AF output must be on. Key 1 turns the
-     * speaker on to listen to the channel. */
-    api->audio_path(false);
+    g.spk=(uint8_t)(g.spk==1u);
+    /* Speaker amplifier (PA8) as saved, off by default: the decoder does not
+     * need it (tested on the radio, 2026-09-30): PA4, the voice-prompt DAC pin,
+     * joins the audio before the amplifier; only the BK4829 AF output must be
+     * on. Key 1 toggles the speaker to listen to the channel. */
+    api->audio_path(g.spk);
     api->set_af(APP_AF_FM);
     api->delay_ms(50);
 
@@ -743,4 +750,5 @@ void app_main(const app_api_t *api){
     biasOff();
     api->set_af(APP_AF_MUTE);
     api->audio_path(false);
+    api->cfg_save(&g.cw,2);      /* staged: flash is written only after a change */
 }

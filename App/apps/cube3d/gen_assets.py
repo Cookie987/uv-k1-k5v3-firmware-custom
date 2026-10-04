@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Cube3D read-only assets: the solids, the Q14 sine quadrant and the speeds.
+# Cube3D read-only assets: the solids, Q14 sine quadrant and speeds.
 #
 # SHAPES layout (offsets relative to SHAPES):
 #   0          count N
@@ -44,6 +44,17 @@ SHAPES = [
     ("PENTAGEM",
      [(28,0,0),(8,26,0),(-22,16,0),(-22,-16,0),(8,-26,0),(0,0,42),(0,0,-42)],
      [(5,0,1),(1,0,6),(4,0,5),(6,0,4),(5,1,2),(2,1,6),(5,2,3),(3,2,6),(5,3,4),(4,3,6)]),
+    # Empty geometry selects the procedural globe renderer in cube3d_app.c.
+    ("GLOBE", [], []),
+    ("DODECA",
+     [(-20,-20,-20),(-20,-20,20),(-20,20,-20),(-20,20,20),
+      (20,-20,-20),(20,-20,20),(20,20,-20),(20,20,20),
+      (0,-12,-32),(0,-12,32),(0,12,-32),(0,12,32),
+      (-12,-32,0),(-12,32,0),(12,-32,0),(12,32,0),
+      (-32,0,-12),(-32,0,12),(32,0,-12),(32,0,12)],
+     [(17,16,0,12,1),(10,8,0,16,2),(14,12,0,8,4),(3,17,1,9,11),
+      (5,9,1,12,14),(3,13,2,16,17),(6,10,2,13,15),(15,13,3,11,7),
+      (5,14,4,18,19),(6,18,4,8,10),(11,9,5,19,7),(19,18,6,15,7)]),
 ]
 
 # One Q14 sine quadrant: symmetry recovers the full 256-step wave.
@@ -96,10 +107,12 @@ for r in records:
     body += r
 
 a = Assets("CUBE3D")
+a.text("T_PAUSE", "PAUSE")
 a.raw("SHAPES", shapes + body)
 a.i16("SIN_Q", SIN_Q)
 a.u8("ROT_RATE", ROT_RATE)
 a.u16("RECIP", RECIP)
+a.u8("BMP_F", [0x3e,0x7f,0x41,0x75,0x75,0x75,0x7d,0x7f,0x3e])
 a.const("RECIP_ZMIN", RECIP_ZMIN)
 a.const("RECIP_ZMAX", RECIP_ZMAX)
 a.const("RECIP_SHIFT", RECIP_SHIFT)

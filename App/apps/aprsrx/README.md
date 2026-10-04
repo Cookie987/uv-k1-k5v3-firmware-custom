@@ -11,7 +11,7 @@ Status:
 | Audio path an app can sample | **Done** by EPIRB 406: RX audio on PA4, ADC channel 4 at 9.6 kHz |
 | Integer demodulator, modelled on synthetic audio (`test/model_rx.py`) | **Done** (see below) |
 | Flipper Zero test transmitter (`test/flipper_aprs.py`) | **Done**, files in `test/flipper/` |
-| Radio app (`aprsrx_app.c`) | **v0.1 receives the Flipper frames on the radio**; v0.3 decodes Mic-E (on air: F5RAV via F1PRY-14); v0.4 decodes continuously with 3 slicers (on air: F1PRY-14 via F5KTR-3); v0.5 shows standard positions; v0.6 adds the speaker key; v0.7 adds the corrected 20x20 APRS symbol bitmaps (not built here) |
+| Radio app (`aprsrx_app.c`) | **v0.1 receives the Flipper frames on the radio**; v0.3 decodes Mic-E (on air: F5RAV via F1PRY-14); v0.4 decodes continuously with 3 slicers (on air: F1PRY-14 via F5KTR-3); v0.5 shows standard positions; v0.6 adds the speaker key; v0.7 adds the corrected 20x20 APRS symbol bitmaps; v0.8 saves the speaker setting; v0.9 scrolls long compact frames by 1 px |
 | Bench test with the Flipper on 433.650 MHz | **Done** (2026-09-30, v0.1: `_long` 10/10 in STD; `_badfcs` not shown) |
 | Real station: FT3D beacon on 144.800 MHz | **Done** (2026-09-30, v0.1: Mic-E frame `>TXUPX9` received, FCS good, = 48°50.89' N 2°16.25' E) |
 | Mic-E decoding (`test/mice.py`: spec encoder vs the app's decoder) | **Done** in the model: 6 cases + the FT3D frame |
@@ -21,9 +21,10 @@ Status:
 1. Set the VFO to the APRS frequency, **FM**: 144.800 MHz, or 433.650 MHz for the
    Flipper test files.
 2. Launch **APRS RX**.
-3. The speaker is off (v0.6): the decoder does not need it, only the BK4829 AF
-   output (tested on the radio: PA4 joins the audio before the amplifier). Key 1
-   turns it on to listen to the channel, as FoxHunt's audio key.
+3. The speaker is off by default (v0.6): the decoder does not need it, only the
+   BK4829 AF output (tested on the radio: PA4 joins the audio before the
+   amplifier). Key 1 turns it on to listen to the channel, as FoxHunt's audio
+   key; since v0.8 the app keeps it as you left it.
 
 Since v0.4 the app decodes **continuously**, as a TNC does: no RSSI trigger,
 the FCS and a UI-frame check (control 0x03, PID 0xF0) sort frames from noise.
@@ -39,8 +40,8 @@ The screen is redrawn after a new frame, a key, or every 5 s.
 
 | Screen | Content |
 |---|---|
-| Status bar | `APRS RX` title, then a `WAIT` capsule until the first frame, the speaker icon while the speaker is on, then in the scroll view ▲ while rows are hidden above and ▼ while rows are hidden below (x = 72-76 as in APRS TX, the speaker icon at x = 59-68; both drawn in one asset read) |
-| Lines 0-3 | The frame in the small font (18 characters a row, non-ASCII shown as `.`), 4 rows at a time, scrolled pixel by pixel with UP/DOWN (v0.7): source call and frame number in bold (`F4HWN-7 #3`), `>DEST,DIGI*,...` (as many path entries as fit two rows), then the info field, whole. For Mic-E (most Yaesu/Kenwood beacons, v0.3): latitude `48 50.89N`, longitude `002 16.25E`, speed km/h, course and symbol, the message type (`Off Duty`, `En Route`...), then altitude and comment without the device markers; for an uncompressed position (`!` `=` `/` `@`, v0.5): latitude, longitude, then the timestamp if any, the symbol (table + code) and the comment. Compressed positions stay raw text. A new frame scrolls back to the top. Key * switches to the compact view (below) |
+| Status bar | `APRS RX` title, then a `WAIT` capsule until the first frame, the speaker icon while the speaker is on, then ▲ while rows are hidden above and ▼ while rows are hidden below (x = 72-76 as in APRS TX, the speaker icon at x = 59-68; both drawn in one asset read) |
+| Lines 0-3 | The frame in the small font (18 characters a row, non-ASCII shown as `.`), 4 rows at a time, scrolled pixel by pixel with UP/DOWN (v0.7): source call in bold, `>DEST,DIGI*,...` (as many path entries as fit two rows), then the info field, whole. For Mic-E (most Yaesu/Kenwood beacons, v0.3): latitude `48 50.89N`, longitude `002 16.25E`, speed km/h, course and symbol, the message type (`Off Duty`, `En Route`...), then altitude and comment without the device markers; for an uncompressed position (`!` `=` `/` `@`, v0.5): latitude, longitude, then the timestamp if any, the symbol (table + code) and the comment. Compressed positions stay raw text. A new frame scrolls back to the top. Key * switches to the compact view (below) |
 | Lines 4-6 | Under a dotted separator (y=31), the frequency drawn as the main screen draws it (big digits up to the kHz, the last two in the small font), aligned left. A matching 20x20 bitmap from the 48-symbol Yaesu set is shown at x=108 on the right for decoded Mic-E and uncompressed positions; the area stays blank for an unknown or unavailable symbol |
 | Bottom row y=49 | `ok 12  -89dBm`: frames received, RSSI at the end of the last frame. (v0.4-v0.5 also showed frames per slicer, `sl a/b/c`: on air the outer slicers found frames too; dropped in v0.6 to fit the speaker key) |
 
@@ -49,9 +50,9 @@ Keys (UV-K5 and UV-K1):
 | Key | Action |
 |---|---|
 | UP/DOWN (held) | Scroll the frame 1 px per 50 ms slot (UV-K1: LEFT/RIGHT, as `nav_dir`), from the source row down to the last row |
-| * | Scroll view / compact view, saved (the flash is written only after a change). Compact: the source in bold, then the path and 3 info rows in the tiny 3x5 font, 32 characters each (position `48 50.89N 002 16.25E` on one row, speed, course, symbol and message type on the next, then the comment), as up to v0.6; no scroll |
-| 1 | Speaker on/off (off at launch); FoxHunt's speaker icon in the status bar while on |
-| MENU | Clear the last frame and the counters |
+| * | Scroll view / compact view, saved on exit (the flash is written only after a change). Compact: the source stays fixed in bold, then the path and info use the tiny 3x5 font, 32 characters each (position `48 50.89N 002 16.25E` on one row, speed, course, symbol and message type on the next, then the comment). If more than four tiny rows are needed, UP/DOWN scrolls that area vertically by 1 px |
+| 1 | Speaker on/off, saved on exit (v0.8; off by default); FoxHunt's speaker icon in the status bar while on |
+| 2 | Clear the last frame and the counters |
 | EXIT | Quit |
 
 The receive path is the firmware's own (STD: 300 Hz high-pass, de-emphasis,

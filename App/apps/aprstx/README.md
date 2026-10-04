@@ -17,12 +17,12 @@ which is also the test receiver.
 | Source | the boot-message callsign (API `boot_callsign`, 1-6 letters/digits) + `SSID` = 7 (0-15, 0 = none): the **default**, until one is chosen on the radio |
 | `DEST` | `APZK5` (APZ = experimental software) |
 | `PATH` | `1` = `WIDE1-1`, an index in `PATHS`: `DIRECT` (no digipeater), `WIDE1-1`, `WIDE1-1,WIDE2-1`; the **default**, until one is chosen on the radio |
-| `LAT`, `LON` | `4850.90N`, `00216.25E`: the **default** position, until one is edited on the radio (key 5) |
+| `LAT`, `LON` | `4850.90N`, `00216.25E`: the **default** position, until one is edited on the radio (key 3) |
 | `SYMBOL` | `/[` (person): the default, until one of the 48 symbols is chosen on the radio |
-| `COMMENT` | `UV-K5 & UV-K1 APRS TX` (43 characters at most) |
+| `COMMENT` | `UV-K5/K1 F4HWN Firmware` (43 characters at most) |
 
-Frame sent: `F4HWN-7>APZK5,WIDE1-1:!4850.90N/00216.25E[UV-K5 & UV-K1 APRS TX` (66 bytes,
-~0.78 s on the air: 50 ms of tone settle, 40 flags = 267 ms, the frame, 3 flags).
+Frame sent: `F4HWN-7>APZK5,WIDE1-1:!4850.90N/00216.25E[UV-K5/K1 F4HWN Firmware` (68 bytes,
+~0.79 s on the air: 50 ms of tone settle, 40 flags = 267 ms, the frame, 3 flags).
 If the boot message is not a plain callsign (empty, more than 6 characters once
 spaces are dropped, or with a `/`), the app shows `No boot callsign` and does not
 transmit.
@@ -41,7 +41,7 @@ Yaesu bitmap set is stored in the app assets; the editor keeps the full width.
 | 2 / F then 2 | Twist `tw` up / down, -4..+8: 2200 Hz gain = level × (8 + tw) / 8 (-6..+6 dB) |
 | F | Arm the next key's down direction (1, 2), as FoxHunt's F; icon in the status bar while armed |
 | * | Scroll view / compact view (saved): compact shows the source in bold, then the path, the position `48 50.90N 002 16.25E`, the symbol and the comment in the tiny 3x5 font, 32 characters a row, without scroll |
-| 5 | Edit the position, SSID, path and symbol |
+| 3 | Edit the position, SSID, path and symbol |
 | EXIT | Quit (level, twist, position, SSID, path, symbol and view are saved) |
 
 ### Editor (v0.3)
